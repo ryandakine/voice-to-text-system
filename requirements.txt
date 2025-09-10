@@ -1,0 +1,23 @@
+# Core speech recognition
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.11
+openai-whisper>=20231117
+
+# GUI and system integration
+PyGObject>=3.42.0
+pynput>=1.7.6
+keyboard>=0.13.5
+psutil>=5.9.0
+
+# Audio processing
+numpy>=1.24.0
+soundfile>=0.12.1
+librosa>=0.10.0
+
+# System utilities
+python-xlib>=0.33
+pyautogui>=0.9.54
+
+# Additional utilities
+requests>=2.31.0
+configparser>=5.3.0

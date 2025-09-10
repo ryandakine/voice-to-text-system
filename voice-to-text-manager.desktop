@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice-to-Text Manager
+GenericName=Voice-to-Text Manager
+Comment=GUI Manager for Voice-to-Text System
+Exec=/home/ryan/code/voice-to-text-system/.venv/bin/python /home/ryan/code/voice-to-text-system/launcher.py --gui
+Icon=applications-system
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Utility;Settings;
+Keywords=voice;speech;recognition;text;input;settings;manager;
+MimeType=
+StartupWMClass=voice-to-text-manager

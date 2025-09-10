@@ -1,0 +1,112 @@
+{
+  "name": "voice-to-text-system",
+  "version": "1.0.0",
+  "description": "Voice-to-text system with comprehensive linting and security analysis",
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx,.py --max-warnings 0",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx,.py --fix",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,py}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,py}\"",
+    "security": "npm audit && npm run security:deps",
+    "security:deps": "audit-ci --config audit-ci.json",
+    "accessibility": "eslint . --ext .js,.jsx,.ts,.tsx --plugin eslint-plugin-jsx-a11y",
+    "compatibility": "eslint . --ext .js,.jsx,.ts,.tsx --env browser,node",
+    "analyze": "npm run lint && npm run security && npm run accessibility",
+    "pre-commit": "npm run lint && npm run format:check && npm run security",
+    "ci": "npm run analyze && npm run format:check"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "audit-ci": "^7.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^5.1.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-sonarjs": "^1.0.0",
+    "prettier": "^3.2.0"
+  },
+  "eslintConfig": {
+    "extends": [
+      "eslint:recommended",
+      "@typescript-eslint/recommended",
+      "plugin:import/errors",
+      "plugin:import/warnings",
+      "plugin:import/typescript",
+      "plugin:jsx-a11y/recommended",
+      "plugin:node/recommended",
+      "plugin:prettier/recommended",
+      "plugin:security/recommended",
+      "plugin:sonarjs/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "ecmaVersion": 2022,
+      "sourceType": "module",
+      "ecmaFeatures": {
+        "jsx": true
+      }
+    },
+    "plugins": [
+      "@typescript-eslint",
+      "import",
+      "jsx-a11y",
+      "node",
+      "prettier",
+      "security",
+      "sonarjs"
+    ],
+    "env": {
+      "browser": true,
+      "node": true,
+      "es2022": true
+    },
+    "rules": {
+      "prettier/prettier": "error",
+      "no-console": "warn",
+      "no-debugger": "error",
+      "no-unused-vars": "error",
+      "import/no-unresolved": "error",
+      "import/no-cycle": "error",
+      "security/detect-object-injection": "error",
+      "security/detect-eval-with-expression": "error",
+      "security/detect-no-csrf-before-method-override": "error",
+      "sonarjs/no-duplicate-string": "warn",
+      "sonarjs/cognitive-complexity": ["error", 15],
+      "@typescript-eslint/no-unused-vars": "error",
+      "@typescript-eslint/explicit-function-return-type": "off",
+      "@typescript-eslint/no-explicit-any": "warn"
+    },
+    "settings": {
+      "import/resolver": {
+        "typescript": {}
+      }
+    },
+    "overrides": [
+      {
+        "files": ["*.py"],
+        "parser": "eslint-plugin-python",
+        "rules": {
+          "no-console": "off"
+        }
+      }
+    ]
+  },
+  "prettier": {
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": true,
+    "printWidth": 80,
+    "tabWidth": 2,
+    "useTabs": false
+  },
+  "audit-ci": {
+    "moderate": true,
+    "output-format": "text"
+  }
+}
+

@@ -1,0 +1,14 @@
+{
+  "moderate": true,
+  "output-format": "text",
+  "allowlist": [
+    "GHSA-1234-5678-9012"
+  ],
+  "path-allowlist": [
+    "/test/"
+  ],
+  "ignore-dev-dependencies": false,
+  "retry-count": 3,
+  "retry-on-429": true
+}
+

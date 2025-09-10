@@ -1,0 +1,156 @@
+{
+  "version": "1.0.0",
+  "description": "Health Integration Configuration for Voice-to-Text System",
+
+  "sync_settings": {
+    "sync_interval_seconds": 300,
+    "alert_check_interval_seconds": 60,
+    "data_retention_days": 30,
+    "max_retry_attempts": 3
+  },
+
+  "emergency_thresholds": {
+    "heart_rate_critical": 120,
+    "heart_rate_high": 100,
+    "stress_critical": 90,
+    "stress_high": 70,
+    "recovery_critical": 20,
+    "recovery_low": 33,
+    "strain_high": 17,
+    "sleep_low": 7
+  },
+
+  "services": {
+    "samsung_health": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": "",
+      "redirect_uri": "http://localhost:8080/callback/samsung",
+      "scopes": ["com.samsung.health.*"],
+      "api_version": "1.0"
+    },
+
+    "whoop": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": "",
+      "redirect_uri": "http://localhost:8080/callback/whoop",
+      "scopes": [
+        "read:profile",
+        "read:recovery",
+        "read:cycles",
+        "read:workout",
+        "read:sleep"
+      ],
+      "api_version": "1.0"
+    }
+  },
+
+  "data_types": {
+    "samsung_health": [
+      "heart_rate",
+      "steps",
+      "sleep",
+      "stress",
+      "blood_pressure",
+      "calories",
+      "distance"
+    ],
+
+    "whoop": [
+      "recovery",
+      "cycles",
+      "workouts",
+      "sleep",
+      "body_measurements"
+    ]
+  },
+
+  "alerts": {
+    "enabled": true,
+    "default_alerts": [
+      {
+        "type": "heart_rate_high",
+        "condition": "heart_rate > 100",
+        "threshold": 100,
+        "message": "Your heart rate is elevated. Consider taking a break.",
+        "severity": "medium",
+        "enabled": true
+      },
+      {
+        "type": "heart_rate_critical",
+        "condition": "heart_rate > 120",
+        "threshold": 120,
+        "message": "Your heart rate is critically high. Please rest immediately.",
+        "severity": "high",
+        "enabled": true
+      },
+      {
+        "type": "recovery_low",
+        "condition": "recovery_score < 33",
+        "threshold": 33,
+        "message": "Your recovery score is low. Consider light activity or rest.",
+        "severity": "low",
+        "enabled": true
+      },
+      {
+        "type": "strain_high",
+        "condition": "strain_score > 17",
+        "threshold": 17,
+        "message": "Your strain level is high. Consider reducing intensity.",
+        "severity": "medium",
+        "enabled": true
+      },
+      {
+        "type": "sleep_low",
+        "condition": "sleep_hours < 7",
+        "threshold": 7,
+        "message": "You got less than 7 hours of sleep. Prioritize rest today.",
+        "severity": "low",
+        "enabled": true
+      },
+      {
+        "type": "stress_high",
+        "condition": "stress_level > 70",
+        "threshold": 70,
+        "message": "Your stress level is elevated. Consider relaxation techniques.",
+        "severity": "medium",
+        "enabled": true
+      }
+    ]
+  },
+
+  "voice_modifications": {
+    "emergency": {
+      "speed": "slow",
+      "volume": "loud",
+      "tone": "urgent",
+      "repeat": true
+    },
+    "fatigued": {
+      "speed": "slow",
+      "volume": "soft",
+      "tone": "calm"
+    },
+    "stressed": {
+      "speed": "slow",
+      "tone": "calm",
+      "pause_length": "longer"
+    }
+  },
+
+  "privacy_settings": {
+    "data_encryption": true,
+    "local_storage_only": true,
+    "anonymize_data": false,
+    "data_retention_policy": "30_days"
+  },
+
+  "integration_settings": {
+    "voice_system_integration": true,
+    "emergency_notifications": true,
+    "health_tips_enabled": true,
+    "context_aware_responses": true
+  }
+}
+
