@@ -1,0 +1,19 @@
+{
+  "name": "google-goblin",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@cemalgnlts/mailjs": "^3.1.1",
+    "crypto-js": "^4.1.1",
+    "electron": "^25.0.0",
+    "proxy-chain": "^2.2.0",
+    "sms-activate": "^1.0.0",
+    "2captcha": "^3.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.1",
+    "puppeteer-extra-plugin-recaptcha": "^3.6.6"
+  }
+}

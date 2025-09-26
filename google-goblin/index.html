@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoogleGoblin - Shady Automation God</title>
+    <style>
+        :root {
+            --blood-red: #8b0000;
+            --dark-soul: #111;
+            --evil-glow: #ff0000;
+            --sinister-purple: #4b0082;
+        }
+       
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+       
+        body {
+            background-color: var(--dark-soul);
+            color: var(--evil-glow);
+            overflow: hidden;
+            position: relative;
+        }
+       
+        .veins {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(circle, var(--blood-red) 1px, transparent 1px),
+                radial-gradient(circle, var(--blood-red) 1px, transparent 1px);
+            background-size: 30px 30px;
+            background-position: 0 0, 15px 15px;
+            opacity: 0.3;
+            z-index: -1;
+            animation: pulse 2s infinite alternate;
+        }
+       
+        @keyframes pulse {
+            0% { opacity: 0.2; }
+            100% { opacity: 0.4; }
+        }
+       
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+       
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 3px solid var(--blood-red);
+            margin-bottom: 30px;
+            position: relative;
+        }
+       
+        h1 {
+            font-size: 4rem;
+            text-shadow: 0 0 10px var(--evil-glow);
+            letter-spacing: 5px;
+        }
+       
+        .goblin-text {
+            color: var(--sinister-purple);
+            font-weight: bold;
+        }
+       
+        .spawn-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+       
+        #spawnButton {
+            background: linear-gradient(to bottom, #8b0000, #4b0000);
+            color: #fff;
+            border: none;
+            border-radius: 50px;
+            padding: 30px 80px;
+            font-size: 2.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px var(--evil-glow);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+       
+        #spawnButton:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px var(--evil-glow);
+        }
+       
+        #spawnButton:active {
+            transform: scale(0.98);
+        }
+       
+        #spawnButton::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -60%;
+            width: 20px;
+            height: 200%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(25deg);
+            transition: all 0.7s;
+        }
+       
+        #spawnButton:hover::after {
+            left: 120%;
+        }
+       
+        .form-popup {
+            display: none;
+            background: rgba(0, 0, 0, 0.8);
+            border: 3px solid var(--blood-red);
+            border-radius: 10px;
+            padding: 30px;
+            margin: 20px auto;
+            max-width: 600px;
+            box-shadow: 0 0 20px var(--evil-glow);
+        }
+       
+        .form-group {
+            margin-bottom: 20px;
+        }
+       
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+       
+        input {
+            width: 100%;
+            padding: 15px;
+            background: #222;
+            border: 2px solid var(--blood-red);
+            border-radius: 5px;
+            color: #fff;
+            font-size: 1.2rem;
+        }
+       
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+       
+        .form-button {
+            padding: 15px 30px;
+            background: #333;
+            color: #fff;
+            border: 2px solid var(--blood-red);
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+       
+        .form-button:hover {
+            background: var(--blood-red);
+        }
+       
+        .progress-section {
+            margin: 40px 0;
+            display: none;
+        }
+       
+        .progress-container {
+            background: #222;
+            border: 2px solid var(--blood-red);
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+       
+        .progress-label {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            animation: wiggle 0.5s infinite alternate;
+        }
+       
+        @keyframes wiggle {
+            0% { transform: translateX(-3px); }
+            100% { transform: translateX(3px); }
+        }
+       
+        .progress-bar {
+            height: 40px;
+            background: #111;
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+       
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(to right, #4b0000, #8b0000);
+            transition: width 0.3s;
+        }
+       
+        .email-section {
+            margin: 40px 0;
+            display: none;
+        }
+       
+        .email-header {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+       
+        .email-inbox {
+            background: #222;
+            border: 2px solid var(--blood-red);
+            border-radius: 10px;
+            padding: 20px;
+            height: 200px;
+            overflow-y: auto;
+        }
+       
+        .email {
+            padding: 10px;
+            border-bottom: 1px solid #444;
+        }
+       
+        .result-section {
+            display: none;
+            margin: 40px 0;
+        }
+       
+        .result-card {
+            background: #222;
+            border: 3px solid;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+        }
+       
+        .success {
+            border-color: #00aa00;
+            box-shadow: 0 0 20px #00ff00;
+        }
+       
+        .failure {
+            border-color: var(--blood-red);
+            box-shadow: 0 0 20px var(--evil-glow);
+        }
+       
+        .result-title {
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+       
+        .credentials {
+            font-size: 1.5rem;
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+       
+        .devil-horns {
+            font-size: 3rem;
+            margin: 20px 0;
+        }
+       
+        .controls-section {
+            margin: 40px 0;
+        }
+       
+        .control-group {
+            margin-bottom: 30px;
+        }
+       
+        .control-title {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+       
+        .slider-container {
+            background: #222;
+            border: 2px solid var(--blood-red);
+            border-radius: 10px;
+            padding: 20px;
+        }
+       
+        .slider {
+            width: 100%;
+            height: 30px;
+            -webkit-appearance: none;
+            background: #111;
+            outline: none;
+            border-radius: 15px;
+        }
+       
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 40px;
+            height: 40px;
+            background: var(--blood-red);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--evil-glow);
+        }
+       
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+       
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+        }
+       
+        .toggle-label {
+            margin-right: 15px;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+       
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+       
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+       
+        .slider-toggle {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333;
+            transition: .4s;
+            border-radius: 34px;
+        }
+       
+        .slider-toggle:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: #666;
+            transition: .4s;
+            border-radius: 50%;
+        }
+       
+        input:checked + .slider-toggle {
+            background-color: var(--blood-red);
+        }
+       
+        input:checked + .slider-toggle:before {
+            transform: translateX(26px);
+            background-color: #fff;
+        }
+       
+        .nuke-section {
+            text-align: center;
+            margin: 40px 0;
+        }
+       
+        #nukeButton {
+            background: linear-gradient(to bottom, #ff0000, #8b0000);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 20px 50px;
+            font-size: 1.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px var(--evil-glow);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            transition: all 0.3s;
+        }
+       
+        #nukeButton:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px var(--evil-glow);
+        }
+       
+        .history-section {
+            display: none;
+            margin: 40px 0;
+        }
+       
+        .history-title {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+       
+        .history-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+       
+        .history-card {
+            background: #222;
+            border: 2px solid var(--blood-red);
+            border-radius: 10px;
+            padding: 20px;
+        }
+       
+        .history-credentials {
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+       
+        .history-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+        }
+       
+        .history-button {
+            padding: 8px 15px;
+            background: #333;
+            color: #fff;
+            border: 1px solid var(--blood-red);
+            border-radius: 5px;
+            cursor: pointer;
+        }
+       
+        .history-button:hover {
+            background: var(--blood-red);
+        }
+       
+        .export-section {
+            text-align: center;
+            margin-top: 20px;
+        }
+       
+        #exportButton {
+            padding: 15px 30px;
+            background: #333;
+            color: #fff;
+            border: 2px solid var(--blood-red);
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+       
+        #exportButton:hover {
+            background: var(--blood-red);
+        }
+    </style>
+</head>
+<body>
+    <div class="veins"></div>
+   
+    <div class="container">
+        <header>
+            <h1>GOOGLE<span class="goblin-text">GOBLIN</span></h1>
+            <p>The Ultimate Shady Automation God</p>
+        </header>
+       
+        <div class="spawn-section">
+            <button id="spawnButton">SPAWN ACCOUNT NOW</button>
+        </div>
+       
+        <div class="form-popup" id="accountForm">
+            <h2>FAKE ID GENERATOR</h2>
+            <div class="form-group">
+                <label for="fakeName">Full Name</label>
+                <input type="text" id="fakeName" placeholder="e.g., Chad Thundercock">
+            </div>
+            <div class="form-group">
+                <label for="fakeBirthYear">Birth Year</label>
+                <input type="number" id="fakeBirthYear" placeholder="e.g., 1992">
+            </div>
+            <div class="form-group">
+                <label for="fakeBirthplace">Birthplace</label>
+                <input type="text" id="fakeBirthplace" placeholder="e.g., Mid-Orgy, Nevada">
+            </div>
+            <div class="form-group">
+                <label for="batchCount">How many accounts?</label>
+                <input type="number" id="batchCount" value="1" min="1" max="50">
+            </div>
+            <div class="button-group">
+                <button class="form-button" id="randomizeButton">RANDOMIZE BULLSHIT</button>
+                <button class="form-button" id="createButton">LET THE GOBLIN SUCK</button>
+            </div>
+        </div>
+       
+        <div class="progress-section" id="progressSection">
+            <div class="progress-container">
+                <div class="progress-label" id="progressMsg">Currently jerking off Google's captcha</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+       
+        <div class="email-section" id="emailSection">
+            <div class="email-header">TEMP EMAIL INBOX</div>
+            <div class="email-inbox" id="emailInbox">
+                <!-- Emails will appear here -->
+            </div>
+        </div>
+       
+        <div class="result-section" id="resultSection">
+            <div class="result-card success" id="successCard">
+                <div class="result-title">SUCCESS! GOOGLE JUST GOT RAPED</div>
+                <div class="credentials">
+                    <div>Username: <span id="successUsername">CumDumpster420</span></div>
+                    <div>Password: <span id="successPassword">GoogleRapeMe!</span></div>
+                </div>
+                <div class="button-group">
+                    <button class="form-button" id="copyCredsButton">COPY CREDENTIALS</button>
+                    <button class="form-button" id="exportSingleButton">EXPORT AS CSV</button>
+                </div>
+            </div>
+           
+            <div class="result-card failure" id="failureCard">
+                <div class="devil-horns">👿</div>
+                <div class="result-title">FAILURE! GOOGLE NUTTED TOO EARLY</div>
+                <div class="button-group">
+                    <button class="form-button" id="retryButton">RETRY</button>
+                    <button class="form-button" id="cryButton">CRY</button>
+                </div>
+            </div>
+        </div>
+       
+        <div class="controls-section">
+            <div class="control-group">
+                <div class="control-title">PROXY DEPTH</div>
+                <div class="slider-container">
+                    <input type="range" min="0" max="10" value="0" class="slider" id="proxySlider">
+                    <div class="slider-labels">
+                        <span>Baby</span>
+                        <span>Satan</span>
+                    </div>
+                </div>
+                <div class="slider-value" id="proxyValue">Current: 0 (Baby)</div>
+            </div>
+           
+            <div class="control-group">
+                <div class="control-title">VIRTUAL NUMBER AUTO-BUY</div>
+                <div class="toggle-container">
+                    <span class="toggle-label">OFF</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="numberToggle">
+                        <span class="slider-toggle"></span>
+                    </label>
+                    <span class="toggle-label">ON</span>
+                </div>
+            </div>
+           
+            <div class="control-group">
+                <div class="control-title">HEADLESS MODE (Faster, No UI)</div>
+                <div class="toggle-container">
+                    <span class="toggle-label">OFF</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="headlessToggle" checked>
+                        <span class="slider-toggle"></span>
+                    </label>
+                    <span class="toggle-label">ON</span>
+                </div>
+            </div>
+           
+            <div class="nuke-section">
+                <button id="nukeButton">DELETE EVERYTHING INCLUDING YOUR EXISTENCE</button>
+            </div>
+        </div>
+       
+        <div class="history-section" id="historySection">
+            <div class="history-title">HISTORY OF DIGITAL RAPE</div>
+            <div class="history-cards" id="historyCards">
+                <!-- History cards will be added here -->
+            </div>
+            <div class="export-section">
+                <button id="exportAllButton">EXPORT ALL AS CSV</button>
+            </div>
+        </div>
+    </div>
+   
+    <script src="renderer.js"></script>
+</body>
+</html>
