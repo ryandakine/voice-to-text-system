@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Privacy Browser Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/ai-browser
+ExecStart=%h/ai-browser/.venv/bin/python -m browser_privacy_agent.main --task "Monitor startup" --context "Boot sequence"
+Environment=AI_BROWSER_ENV_FILE=%h/ai-browser/.env
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
