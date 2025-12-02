@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Voice to Text Tray
+Comment=System Tray Icon for Voice to Text System
+Exec=/home/ryan/voice-to-text-system/scripts/launch_tray.sh
+Icon=microphone
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

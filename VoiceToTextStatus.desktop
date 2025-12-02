@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice to Text Status
+Comment=Control the Voice to Text Service
+Exec=/home/ryan/voice-to-text-system/scripts/launch_status_gui.sh
+Icon=microphone
+Terminal=false
+Categories=Utility;

@@ -119,7 +119,7 @@ class HotkeyHandler:
             
             # Start xbindkeys
             self.xbindkeys_process = subprocess.Popen(
-                ['xbindkeys', '-f', str(self.xbindkeys_config)],
+                ['xbindkeys', '-n', '-f', str(self.xbindkeys_config)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
