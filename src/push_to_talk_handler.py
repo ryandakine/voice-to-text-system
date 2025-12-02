@@ -83,8 +83,12 @@ class PushToTalkHandler:
     def _on_key_press(self, key):
         """Handle key press events."""
         try:
+            # Debug: Log every key press to see if we're receiving events
+            # logger.debug(f"Key pressed: {key}")
+            
             # Check if Alt key was pressed
             if key in self.trigger_keys and not self.alt_pressed:
+                logger.info(f"Alt key detected: {key}")
                 self.alt_pressed = True
                 
                 # Start recording if not already recording

@@ -70,22 +70,38 @@ class TextInserter:
         """Insert text using clipboard method."""
         try:
             # Store original clipboard content
-            self.original_clipboard = pyperclip.paste()
+            try:
+                self.original_clipboard = pyperclip.paste()
+            except:
+                self.original_clipboard = ""
+            
+            # Clear clipboard first to prevent old paste
+            pyperclip.copy("")
+            time.sleep(0.05)
             
             # Set new text to clipboard
             pyperclip.copy(text)
             
-            # Wait a moment for clipboard to update
-            time.sleep(self.delay_before_insert)
+            # Wait for clipboard to update
+            time.sleep(0.15)
+            
+            # Verify clipboard has the correct content
+            current_clip = pyperclip.paste()
+            if current_clip != text:
+                logger.warning(f"Clipboard verification failed. Expected: {text[:50]}, Got: {current_clip[:50]}")
             
             # Simulate Ctrl+V paste
             pyautogui.hotkey('ctrl', 'v')
             
             # Wait for paste to complete
-            time.sleep(0.1)
+            time.sleep(0.2)
             
-            # Restore original clipboard if configured
-            if self.clear_clipboard_after:
+            # Clear clipboard immediately to prevent re-pasting old content
+            pyperclip.copy("")
+            time.sleep(0.05)
+            
+            # Restore original clipboard if configured and it wasn't empty
+            if self.clear_clipboard_after and self.original_clipboard:
                 pyperclip.copy(self.original_clipboard)
             
             logger.log_text_insertion("clipboard", True, f"length={len(text)}")
@@ -95,7 +111,8 @@ class TextInserter:
             logger.error(f"Clipboard insertion failed: {e}")
             # Try to restore clipboard
             try:
-                pyperclip.copy(self.original_clipboard)
+                if self.original_clipboard:
+                    pyperclip.copy(self.original_clipboard)
             except:
                 pass
             return False

@@ -5,7 +5,9 @@
 sleep 5
 
 # Set up logging
-LOG_DIR="/home/ryan/code/voice-to-text-system/logs"
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/voice-to-text-$(date +%Y%m%d).log"
 
@@ -13,11 +15,10 @@ LOG_FILE="$LOG_DIR/voice-to-text-$(date +%Y%m%d).log"
 start_voice_to_text() {
     echo "[$(date)] Starting Voice-to-Text Push-to-Talk System..." >> "$LOG_FILE"
     
-    cd /home/ryan/code/voice-to-text-system
+    cd "$SCRIPT_DIR"
     
     # Activate virtual environment and run the application
-    /home/ryan/code/voice-to-text-system/.venv/bin/python \
-        /home/ryan/code/voice-to-text-system/start_push_to_talk.py \
+    "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/start_push_to_talk.py" \
         >> "$LOG_FILE" 2>&1
     
     # If it crashes, log it
