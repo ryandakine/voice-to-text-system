@@ -345,3 +345,7 @@ See `src/health_integration/README.md` for detailed documentation and `src/healt
 - Universal text insertion
 - System tray integration
 - Auto-start capability
+
+## AI Privacy Browser Fork
+
+A Linux-native customization of the [browser-use](https://github.com/browser-use/browser-use) project is included under `browser_privacy_agent/`. It loads the uncensored `DavidAU/Qwen3-8B-64k-Context-2X-Josiefied-Uncensored` model locally (CUDA-only) with `<think>` templated prompts, Playwright stealth automations, optional Gradio UI, and cross-model validation for hallucination mitigation. Refer to [docs/AI_BROWSER_SETUP.md](docs/AI_BROWSER_SETUP.md) for fork instructions, installation steps (`install.sh`), systemd service usage (`ai-browser.service`), and privacy-oriented configuration (`.env.example`).
