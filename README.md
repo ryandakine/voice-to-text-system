@@ -26,19 +26,26 @@ A system-wide voice-to-text application for Linux Mint that provides universal s
 
 1. **Clone the repository**:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/ryandakine/voice-to-text-system.git
    cd voice-to-text-system
    ```
 
 2. **Run the installation script**:
    ```bash
-   chmod +x scripts/install.sh
-   ./scripts/install.sh
+   chmod +x install.sh
+   ./install.sh
    ```
 
 3. **Start the system**:
    ```bash
+   # Start with GUI Manager
    python3 src/main.py
+
+   # Or run in background with hotkey (F5)
+   python3 src/main.py --mode hotkey
+
+   # Or run in Push-to-Talk mode (Alt key)
+   python3 src/main.py --mode ptt
    ```
 
 ## Manual Installation
