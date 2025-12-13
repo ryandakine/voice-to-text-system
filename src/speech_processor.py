@@ -22,6 +22,8 @@ class SpeechProcessor:
         self.language = config.get('Whisper', 'language', 'auto')
         self.task = config.get('Whisper', 'task', 'transcribe')
         self.temperature = config.getfloat('Whisper', 'temperature', 0.0)
+        self.device = config.get('Whisper', 'device', 'cpu')
+        self.fp16 = config.getboolean('Whisper', 'fp16', False)
         
         # Model cache directory
         self.cache_dir = Path.home() / ".cache" / "whisper"
@@ -40,6 +42,7 @@ class SpeechProcessor:
             # Load model with caching
             self.model = whisper.load_model(
                 self.model_name,
+                device=self.device,
                 download_root=str(self.cache_dir)
             )
             
@@ -71,7 +74,7 @@ class SpeechProcessor:
                 language=self.language if self.language != 'auto' else None,
                 task=self.task,
                 temperature=self.temperature,
-                fp16=False  # Use CPU for compatibility
+                fp16=self.fp16
             )
             
             transcription = result.get('text', '').strip()
@@ -105,12 +108,18 @@ class SpeechProcessor:
                 'language': self.language if self.language != 'auto' else None,
                 'task': self.task,
                 'temperature': self.temperature,
-                'fp16': False
+                'fp16': self.fp16
             }
             transcribe_options.update(options)
             
             logger.info(f"Transcribing with custom options: {transcribe_options}")
             
+            # Ensure device is set correctly if passed in options
+            if 'device' in options:
+                 # Whisper transcribe() doesn't take device arg directly (it's set on load), 
+                 # but we can try to respect it if easy, though for now we stick to load-time device.
+                 pass
+
             result = self.model.transcribe(audio_file, **transcribe_options)
             transcription = result.get('text', '').strip()
             

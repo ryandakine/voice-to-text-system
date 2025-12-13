@@ -1,6 +1,10 @@
 #!/bin/bash
 # Voice-to-Text Push-to-Talk Startup Script
 
+# Ensure GUI env vars exist when started via nohup / autostart
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+
 # Wait a bit for the desktop to fully load
 sleep 5
 

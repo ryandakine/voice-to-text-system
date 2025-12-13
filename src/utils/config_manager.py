@@ -58,14 +58,17 @@ class ConfigManager:
             'model': 'base',
             'language': 'auto',
             'task': 'transcribe',
-            'temperature': '0.0'
+            'temperature': '0.0',
+            'device': 'cpu',
+            'fp16': 'false'
         }
         
         self.config['TextInsertion'] = {
             'primary_method': 'clipboard',
             'fallback_method': 'keyboard',
             'delay_before_insert': '0.1',
-            'clear_clipboard_after': 'true'
+            'clear_clipboard_after': 'true',
+            'supported_apps': 'firefox,chrome,chromium,brave,code,code-oss,sublime_text,gedit,mousepad,leafpad,libreoffice,libreoffice-writer,terminal,gnome-terminal,xfce4-terminal,konsole,tilix,terminator'
         }
         
         self.config['GUI'] = {
@@ -138,7 +141,9 @@ class ConfigManager:
             'model': self.get('Whisper', 'model', 'base'),
             'language': self.get('Whisper', 'language', 'auto'),
             'task': self.get('Whisper', 'task', 'transcribe'),
-            'temperature': self.getfloat('Whisper', 'temperature', 0.0)
+            'temperature': self.getfloat('Whisper', 'temperature', 0.0),
+            'device': self.get('Whisper', 'device', 'cpu'),
+            'fp16': self.getboolean('Whisper', 'fp16', False)
         }
     
     def get_text_insertion_config(self) -> Dict[str, Any]:
@@ -147,7 +152,8 @@ class ConfigManager:
             'primary_method': self.get('TextInsertion', 'primary_method', 'clipboard'),
             'fallback_method': self.get('TextInsertion', 'fallback_method', 'keyboard'),
             'delay_before_insert': self.getfloat('TextInsertion', 'delay_before_insert', 0.1),
-            'clear_clipboard_after': self.getboolean('TextInsertion', 'clear_clipboard_after', True)
+            'clear_clipboard_after': self.getboolean('TextInsertion', 'clear_clipboard_after', True),
+            'supported_apps': self.get('TextInsertion', 'supported_apps', '').split(',')
         }
     
     def get_gui_config(self) -> Dict[str, Any]:

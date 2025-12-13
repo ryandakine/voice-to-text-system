@@ -21,6 +21,17 @@ class TextInserter:
         self.fallback_method = config.get('TextInsertion', 'fallback_method', 'keyboard')
         self.delay_before_insert = config.getfloat('TextInsertion', 'delay_before_insert', 0.1)
         self.clear_clipboard_after = config.getboolean('TextInsertion', 'clear_clipboard_after', True)
+        self.supported_apps = config.get('TextInsertion', 'supported_apps', '').split(',')
+        if not self.supported_apps or self.supported_apps == ['']:
+             # Fallback default if empty
+             self.supported_apps = [
+                'firefox', 'chrome', 'chromium', 'brave',
+                'code', 'code-oss', 'sublime_text',
+                'gedit', 'mousepad', 'leafpad',
+                'libreoffice', 'libreoffice-writer',
+                'terminal', 'gnome-terminal', 'xfce4-terminal',
+                'konsole', 'tilix', 'terminator'
+             ]
         
         # Store original clipboard content
         self.original_clipboard = ""
@@ -203,14 +214,7 @@ class TextInserter:
     
     def get_supported_applications(self) -> List[str]:
         """Get list of applications that work well with text insertion."""
-        return [
-            'firefox', 'chrome', 'chromium', 'brave',
-            'code', 'code-oss', 'sublime_text',
-            'gedit', 'mousepad', 'leafpad',
-            'libreoffice', 'libreoffice-writer',
-            'terminal', 'gnome-terminal', 'xfce4-terminal',
-            'konsole', 'tilix', 'terminator'
-        ]
+        return self.supported_apps
     
     def test_insertion_methods(self) -> dict:
         """Test all insertion methods and return results."""

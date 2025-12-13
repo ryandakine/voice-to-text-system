@@ -66,6 +66,11 @@ class VoiceToTextSystemPTT:
                 logger.error("Failed to start push-to-talk handler")
                 return False
             
+            # Initialize processing queue and worker
+            self.audio_queue = __import__('queue').Queue()
+            self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+            self.worker_thread.start()
+            
             # Register signal handlers
             signal.signal(signal.SIGINT, self._signal_handler)
             signal.signal(signal.SIGTERM, self._signal_handler)
@@ -85,6 +90,22 @@ class VoiceToTextSystemPTT:
             logger.error(f"Failed to start system: {e}")
             return False
     
+    def _process_queue(self):
+        """Worker function to process audio files from queue."""
+        logger.info("Worker thread started")
+        while True:
+            try:
+                # Get audio file from queue (blocking)
+                audio_file = self.audio_queue.get()
+                
+                try:
+                    self._process_audio(audio_file)
+                finally:
+                    self.audio_queue.task_done()
+                    
+            except Exception as e:
+                logger.error(f"Error in worker thread: {e}")
+
     def stop(self):
         """Stop the voice-to-text system."""
         if not self.running:
@@ -108,7 +129,7 @@ class VoiceToTextSystemPTT:
             
         except Exception as e:
             logger.error(f"Error stopping system: {e}")
-    
+
     def _on_recording_start(self):
         """Handle recording start event (Alt key pressed)."""
         try:
@@ -128,7 +149,7 @@ class VoiceToTextSystemPTT:
             
         except Exception as e:
             logger.error(f"Error starting recording: {e}")
-    
+
     def _on_recording_stop(self):
         """Handle recording stop event (Alt key released)."""
         try:
@@ -142,16 +163,13 @@ class VoiceToTextSystemPTT:
                 logger.error("Failed to get recorded audio")
                 return
             
-            # Process audio in a separate thread to avoid blocking
-            threading.Thread(
-                target=self._process_audio,
-                args=(audio_file,),
-                daemon=True
-            ).start()
+            # Put audio file in queue for processing
+            self.audio_queue.put(audio_file)
+            logger.debug("Audio file added to processing queue")
             
         except Exception as e:
             logger.error(f"Error stopping recording: {e}")
-    
+
     def _process_audio(self, audio_file: str):
         """Process recorded audio and insert text."""
         try:

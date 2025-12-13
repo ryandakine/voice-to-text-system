@@ -9,7 +9,7 @@ case "$1" in
         pkill -f "start-voice-to-text.sh" 2>/dev/null
         
         # Start in background
-        nohup /home/ryan/code/voice-to-text-system/start-voice-to-text.sh > /dev/null 2>&1 &
+        nohup /home/ryan/voice-to-text-system/start-voice-to-text.sh > /dev/null 2>&1 &
         echo "Voice-to-Text system started in background (PID: $!)"
         echo "Hold Alt key to record, release to transcribe."
         ;;
@@ -28,7 +28,8 @@ case "$1" in
         ;;
         
     status)
-        if pgrep -f "start_push_to_talk.py" > /dev/null; then
+        # start-voice-to-text.sh sleeps briefly before launching Python, so check both.
+        if pgrep -f "start_push_to_talk.py" > /dev/null || pgrep -f "start-voice-to-text.sh" > /dev/null; then
             echo "Voice-to-Text system is RUNNING"
             echo "Process details:"
             ps aux | grep -E "start_push_to_talk.py|start-voice-to-text.sh" | grep -v grep
@@ -38,19 +39,19 @@ case "$1" in
         ;;
         
     logs)
-        LOG_FILE="/home/ryan/code/voice-to-text-system/logs/voice-to-text-$(date +%Y%m%d).log"
+        LOG_FILE="/home/ryan/voice-to-text-system/logs/voice-to-text-$(date +%Y%m%d).log"
         if [ -f "$LOG_FILE" ]; then
             echo "Showing recent logs from $LOG_FILE:"
             tail -n 50 "$LOG_FILE"
         else
             echo "No log file found for today. Checking push_to_talk.log..."
-            tail -n 50 /home/ryan/code/voice-to-text-system/push_to_talk.log 2>/dev/null || echo "No logs available"
+            tail -n 50 /home/ryan/voice-to-text-system/push_to_talk.log 2>/dev/null || echo "No logs available"
         fi
         ;;
         
     test)
         echo "Testing Voice-to-Text system (will run in foreground, press Ctrl+C to stop)..."
-        cd /home/ryan/code/voice-to-text-system
+        cd /home/ryan/voice-to-text-system
         .venv/bin/python start_push_to_talk.py
         ;;
         
