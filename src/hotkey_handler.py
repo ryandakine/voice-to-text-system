@@ -241,5 +241,5 @@ class HotkeyHandler:
         }
 
 
-# Global hotkey handler instance
-hotkey_handler = HotkeyHandler()
+
+# Global instance removed in favor of Dependency Injection

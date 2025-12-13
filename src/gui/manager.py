@@ -14,10 +14,12 @@ from pathlib import Path
 
 from ..utils.logger import logger
 from ..utils.config_manager import config
-from ..utils.audio_utils import audio_manager
-from ..speech_processor import speech_processor
-from ..text_insertion import text_inserter
-from ..hotkey_handler import hotkey_handler
+from ..utils.audio_utils import AudioManager
+from ..speech_processor import SpeechProcessor
+from ..text_insertion import TextInserter
+from ..hotkey_handler import HotkeyHandler
+from ..application import VoiceToTextApp
+from ..input_strategy import HotkeyInputStrategy
 
 
 class VoiceToTextManager(Gtk.Window):
@@ -34,6 +36,23 @@ class VoiceToTextManager(Gtk.Window):
         self.system_running = False
         self.recording = False
         self.processing = False
+        
+        # Instantiate services (Dependency Composition)
+        self.audio_manager = AudioManager()
+        self.speech_processor = SpeechProcessor()
+        self.text_inserter = TextInserter()
+        self.hotkey_handler = HotkeyHandler()
+        
+        # Default strategy for GUI is Hotkey for now
+        self.input_strategy = HotkeyInputStrategy(self.hotkey_handler)
+        
+        self.app = VoiceToTextApp(
+            transcription_service=self.speech_processor,
+            output_service=self.text_inserter,
+            input_strategy=self.input_strategy,
+            audio_manager=self.audio_manager
+        )
+        self.app_thread = None
         
         # Create UI
         self._create_ui()
@@ -543,7 +562,7 @@ class VoiceToTextManager(Gtk.Window):
     def _update_device_list(self):
         """Update the audio device list."""
         try:
-            devices = audio_manager.get_audio_devices()
+            devices = self.audio_manager.get_audio_devices()
             
             # Clear existing list
             self.device_liststore.clear()
@@ -588,6 +607,10 @@ class VoiceToTextManager(Gtk.Window):
         """Handle start button click."""
         try:
             # Start the system
+            if not self.app_thread or not self.app_thread.is_alive():
+                self.app_thread = threading.Thread(target=self.app.start, daemon=True)
+                self.app_thread.start()
+            
             self.system_running = True
             self.start_button.set_sensitive(False)
             self.stop_button.set_sensitive(True)
@@ -602,6 +625,7 @@ class VoiceToTextManager(Gtk.Window):
         """Handle stop button click."""
         try:
             # Stop the system
+            self.app.stop()
             self.system_running = False
             self.start_button.set_sensitive(True)
             self.stop_button.set_sensitive(False)

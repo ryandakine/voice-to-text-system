@@ -13,7 +13,10 @@ from .utils.logger import logger
 from .utils.config_manager import config
 
 
-class SpeechProcessor:
+
+from .interfaces import TranscriptionService
+
+class SpeechProcessor(TranscriptionService):
     """Handles speech-to-text conversion using Whisper."""
     
     def __init__(self):
@@ -221,5 +224,5 @@ class SpeechProcessor:
         return audio_duration * factor
 
 
-# Global speech processor instance
-speech_processor = SpeechProcessor()
+
+# Global instance removed in favor of Dependency Injection

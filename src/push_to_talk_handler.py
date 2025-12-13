@@ -176,5 +176,5 @@ class PushToTalkHandler:
         return self.is_recording
 
 
-# Create a global instance
-push_to_talk_handler = PushToTalkHandler()
+
+# Global instance removed in favor of Dependency Injection

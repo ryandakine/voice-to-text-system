@@ -1,5 +1,13 @@
 import pytest
 from unittest.mock import patch, MagicMock
+import sys
+
+# Mock pynput and whisper to prevent import errors in CI env
+sys.modules["pynput"] = MagicMock()
+sys.modules["pynput.keyboard"] = MagicMock()
+sys.modules["whisper"] = MagicMock()
+sys.modules["pyautogui"] = MagicMock()
+sys.modules["pyperclip"] = MagicMock()
 import time
 
 from src.text_insertion import TextInserter

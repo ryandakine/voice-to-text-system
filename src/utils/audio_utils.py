@@ -231,5 +231,5 @@ class AudioManager:
             pass
 
 
-# Global audio manager instance
-audio_manager = AudioManager()
+
+# Global instance removed in favor of Dependency Injection

@@ -7,6 +7,6 @@ __version__ = "1.0.0"
 __author__ = "System Administrator"
 __description__ = "Universal voice-to-text system for Linux Mint"
 
-from .main import VoiceToTextSystem
+from .application import VoiceToTextApp
 
-__all__ = ['VoiceToTextSystem']
+__all__ = ['VoiceToTextApp']

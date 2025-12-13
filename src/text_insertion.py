@@ -13,7 +13,9 @@ from .utils.logger import logger
 from .utils.config_manager import config
 
 
-class TextInserter:
+from .interfaces import OutputService
+
+class TextInserter(OutputService):
     """Handles universal text insertion across different applications."""
     
     def __init__(self):
@@ -268,5 +270,5 @@ class TextInserter:
         logger.info(f"Insertion delay updated to: {delay}s")
 
 
-# Global text inserter instance
-text_inserter = TextInserter()
+
+# Global instance removed in favor of Dependency Injection
