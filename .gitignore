@@ -1,3 +1,11 @@
+# Secrets - NEVER commit
+.env
+*.env.local
+
+# Lock files
+*.lock
+voice_typer.lock
+
 # Node modules
 node_modules/
 
