@@ -4,13 +4,14 @@ A system-wide voice-to-text application for Linux Mint that provides universal s
 
 ## Features
 
-- **Global Hotkey**: Press F5 anywhere to start voice recording
+- **Real-time Streaming** (Recommended): Deepgram Nova-2 for instant voice-to-text
+- **Global Hotkey**: Press F5 anywhere to start voice recording (Whisper mode)
 - **Universal Text Insertion**: Works in browsers, text editors, terminals, and forms
-- **Whisper Integration**: Uses OpenAI's Whisper for high-quality speech recognition
+- **Whisper Integration**: Uses OpenAI's Whisper for high-quality local speech recognition
 - **System Tray Integration**: Easy access to settings and status
 - **Auto-start Support**: Configure to start automatically with your system
-- **Privacy-Focused**: All processing happens locally on your machine
-- **Health Integration** (NEW): Connect with Samsung Health and Whoop for health-aware responses
+- **Privacy-Focused**: Whisper mode processes locally; Deepgram mode uses cloud API
+- **Health Integration**: Connect with Samsung Health and Whoop for health-aware responses
 - **Real-time Monitoring**: Continuous health data sync and alert system
 - **Emergency Protocols**: Automated emergency response with health monitoring
 
@@ -22,7 +23,54 @@ A system-wide voice-to-text application for Linux Mint that provides universal s
 - **Memory**: At least 2GB RAM (4GB+ recommended)
 - **Storage**: 1GB free space for Whisper models
 
-## Quick Installation
+## Quick Start - Deepgram Voice Typer (Recommended)
+
+The fastest way to get real-time voice-to-text working:
+
+1. **Clone and setup**:
+   ```bash
+   git clone https://github.com/ryandakine/voice-to-text-system.git
+   cd voice-to-text-system
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Get a Deepgram API key** (free tier available):
+   - Sign up at https://deepgram.com
+   - Create an API key in the console
+
+3. **Configure your API key**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your DEEPGRAM_API_KEY
+   ```
+
+4. **Install system dependencies**:
+   ```bash
+   sudo apt install -y xdotool python3-pyaudio portaudio19-dev
+   ```
+
+5. **Run the voice typer**:
+   ```bash
+   ./toggle-voice-typer.sh
+   ```
+
+### Deepgram Voice Typer Controls
+
+- **F8**: Toggle listening on/off (pause/resume)
+- **F9**: Toggle CIMCO AI mode (voice assistant)
+- Run `./toggle-voice-typer.sh` again to stop
+
+### Desktop Shortcut
+
+Copy `toggle-voice-typer.desktop` to `~/.local/share/applications/` and bind to a keyboard shortcut for quick toggle.
+
+---
+
+## Alternative: Whisper Mode (Local/Offline)
+
+If you prefer fully local processing without cloud API:
 
 1. **Clone the repository**:
    ```bash
@@ -335,6 +383,16 @@ for tip in tips:
 See `src/health_integration/README.md` for detailed documentation and `src/health_integration_example.py` for a complete integration example.
 
 ## Changelog
+
+### Version 1.2.0 (Deepgram Real-time Streaming)
+- Added Deepgram Nova-2 real-time voice typer
+- Faster endpointing (200ms) for responsive transcription
+- Auto-reconnect on stale connections
+- Keepalive pings to maintain connection health
+- F8 toggle for pause/resume listening
+- F9 toggle for CIMCO AI assistant mode
+- Background operation via toggle script
+- Desktop notification support
 
 ### Version 1.1.0 (Health Integration)
 - Added comprehensive health monitoring system
