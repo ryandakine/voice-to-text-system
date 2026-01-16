@@ -1,0 +1,17 @@
+[Unit]
+Description=Voice-to-Text (Push-to-Talk, Deepgram)
+After=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ryan/voice-to-text-system
+ExecStart=/home/ryan/voice-to-text-system/.venv/bin/python /home/ryan/voice-to-text-system/start_push_to_talk_deepgram.py
+Restart=on-failure
+RestartSec=2
+
+# Required for X11-based global key listening and text insertion.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+
+[Install]
+WantedBy=default.target

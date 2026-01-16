@@ -1,0 +1,18 @@
+[Unit]
+Description=Voice-to-Text (Push-to-Talk)
+After=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ryan/voice-to-text-system
+ExecStart=/home/ryan/voice-to-text-system/.venv/bin/python /home/ryan/voice-to-text-system/start_push_to_talk.py
+Restart=on-failure
+RestartSec=2
+
+# Required for X11-based global key listening and text insertion.
+# If your DISPLAY is not :0, change this (or override via a drop-in).
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+
+[Install]
+WantedBy=default.target

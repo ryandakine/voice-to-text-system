@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice Typer (Deepgram)
+GenericName=Voice Typer
+Comment=Real-time streaming voice-to-text using Deepgram Nova-2
+Exec=/home/ryan/voice-to-text-system/start-voice-typer.sh
+Icon=audio-input-microphone
+Terminal=false
+StartupNotify=true
+Categories=AudioVideo;Audio;Utility;Accessibility;
+Keywords=voice;speech;recognition;text;input;deepgram;streaming;
+StartupWMClass=voice-typer

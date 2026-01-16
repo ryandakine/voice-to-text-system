@@ -21,3 +21,8 @@ pyautogui>=0.9.54
 # Additional utilities
 requests>=2.31.0
 configparser>=5.3.0
+pyinstaller>=6.4.0
+
+# Deepgram integration
+deepgram-sdk>=3.0.0
+python-dotenv>=1.0.0
