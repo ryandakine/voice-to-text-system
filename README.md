@@ -21,6 +21,16 @@ A system-wide voice-to-text application for Linux Mint that provides universal s
 - **Real-time Monitoring**: Continuous health data sync and alert system
 - **Emergency Protocols**: Automated emergency response with health monitoring
 
+> [!WARNING]
+> **Compatibility Warning**: The **Deepgram Voice Typer** and **Whisper Mode** cannot be run simultaneously. 
+> 
+> If both systems are active at the same time:
+> 1. You will experience "Double Talk" (duplicate text insertion).
+> 2. The Whisper hotkey (F5) and Deepgram toggle logic (F8/Alt) may conflict.
+> 3. Audio resources may be locked, causing one or both systems to fail.
+> 
+> **Recommendation**: Always ensure the Deepgram Voice Typer is stopped (`./toggle-voice-typer.sh`) before launching Whisper Mode (`python3 src/main.py`), and vice versa.
+
 ## System Requirements
 
 - **OS**: Linux Mint 21.x or Ubuntu 22.04+
