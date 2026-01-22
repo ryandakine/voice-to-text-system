@@ -131,10 +131,29 @@ class DashboardWindow(Gtk.Window):
         # Start timer
         GLib.timeout_add_seconds(2, self.check_status)
 
+    def _get_backend(self):
+        """Return the configured transcription backend ('whisper' or 'deepgram')."""
+        try:
+            return config.get('Engine', 'backend', 'whisper')
+        except Exception:
+            return 'whisper'
+
+    def _get_service_name(self) -> str:
+        """Return the systemd service name for the current backend.
+
+        whisper  -> voice-to-text.service
+        deepgram -> voice-to-text-deepgram.service
+        """
+        backend = self._get_backend()
+        if backend == 'deepgram':
+            return 'voice-to-text-deepgram.service'
+        return 'voice-to-text.service'
+
     def get_service_status(self):
+        service_name = self._get_service_name()
         try:
             result = subprocess.run(
-                ["systemctl", "--user", "is-active", "voice-to-text.service"],
+                ["systemctl", "--user", "is-active", service_name],
                 capture_output=True,
                 text=True
             )
@@ -169,14 +188,25 @@ class DashboardWindow(Gtk.Window):
     def check_model(self):
         # Read config directly to avoid caching issues
         try:
-            current_model = config.get('Whisper', 'model', 'base')
+            backend = self._get_backend()
             self.updating = True
-            if current_model == 'tiny':
-                self.eco_switch.set_state(True)
-                self.info_label.set_text("Current Model: Tiny (Fast, Low RAM)")
-            else:
+
+            if backend == 'deepgram':
+                # Deepgram engine: eco mode doesn't apply; show engine info instead.
                 self.eco_switch.set_state(False)
-                self.info_label.set_text(f"Current Model: {current_model.capitalize()} (Better Accuracy)")
+                self.eco_switch.set_sensitive(False)
+                self.info_label.set_text("Engine: Deepgram (cloud)")
+            else:
+                # Whisper engine: eco switch controls tiny vs base model.
+                self.eco_switch.set_sensitive(True)
+                current_model = config.get('Whisper', 'model', 'base')
+                if current_model == 'tiny':
+                    self.eco_switch.set_state(True)
+                    self.info_label.set_text("Current Model: Tiny (Fast, Low RAM)")
+                else:
+                    self.eco_switch.set_state(False)
+                    self.info_label.set_text(f"Current Model: {current_model.capitalize()} (Better Accuracy)")
+
             self.updating = False
         except Exception as e:
             print(f"Error checking model: {e}")
@@ -185,10 +215,11 @@ class DashboardWindow(Gtk.Window):
         if self.updating: return
         
         action = "start" if state else "stop"
+        service_name = self._get_service_name()
         self.status_label.set_text("Processing...")
         
         def run_cmd():
-            subprocess.run(["systemctl", "--user", action, "voice-to-text.service"])
+            subprocess.run(["systemctl", "--user", action, service_name])
             GLib.idle_add(self.check_status)
             
         threading.Thread(target=run_cmd).start()
@@ -204,9 +235,10 @@ class DashboardWindow(Gtk.Window):
             # Update config
             config.update_whisper_model(new_model)
             
-            # Restart service if running
-            if self.service_switch.get_active():
-                subprocess.run(["systemctl", "--user", "restart", "voice-to-text.service"])
+            # Restart service if running and backend is Whisper
+            if self.service_switch.get_active() and self._get_backend() == 'whisper':
+                service_name = self._get_service_name()
+                subprocess.run(["systemctl", "--user", "restart", service_name])
             
             GLib.idle_add(self.check_model)
             GLib.idle_add(self.check_status)

@@ -6,7 +6,9 @@ Features
 - Streams microphone audio to Deepgram Nova-2 over WebSocket using deepgram-sdk v5.x.
 - Uses PyAudio for microphone capture (16 kHz mono, linear16).
 - On finalized transcripts, types the text into the currently focused window via pynput.
-- F8 hotkey toggles listening on/off without stopping the script.
+- F8 hotkey toggles "Always Listening" mode (VAD).
+- Alt (Left or Right) works as Push-to-Talk (PTT), overriding the toggle.
+- Starts in PAUSED mode by default for safety.
 - Reads DEEPGRAM_API_KEY from a .env file (via python-dotenv) or environment.
 - Attempts to gracefully handle connection drops with automatic reconnection.
 
@@ -63,9 +65,9 @@ class MicrophoneStreamer:
     The callback is responsible for sending bytes to Deepgram.
     """
 
-    def __init__(self, send_audio_callback, listening_flag, stop_event: threading.Event):
+    def __init__(self, send_audio_callback, should_send_callback, stop_event: threading.Event):
         self._send_audio_callback = send_audio_callback
-        self._listening_flag = listening_flag
+        self._should_send_callback = should_send_callback
         self._stop_event = stop_event
 
         self._pa = None
@@ -104,8 +106,8 @@ class MicrophoneStreamer:
                 time.sleep(0.1)
                 continue
 
-            # Only send audio when listening is enabled
-            if self._listening_flag.is_set():
+            # Only send audio when listening is enabled (Toggle ON or PTT held)
+            if self._should_send_callback():
                 try:
                     self._send_audio_callback(data)
                 except Exception as exc:  # pragma: no cover - network dependent
@@ -152,11 +154,12 @@ class VoiceTyper:
 
         self._stop_event = threading.Event()
         self._listening_flag = threading.Event()
-        self._listening_flag.set()  # start in listening mode
+        self._listening_flag.clear()  # Start PAUSED (User preference for safety)
+        self._ptt_active = False      # Push-to-Talk state
 
         self._keyboard = KeyboardController()
 
-        self._mic = MicrophoneStreamer(self._send_audio, self._listening_flag, self._stop_event)
+        self._mic = MicrophoneStreamer(self._send_audio, self._should_stream_audio, self._stop_event)
 
         self._reconnect_lock = threading.Lock()
         self._reconnecting = False
@@ -175,6 +178,10 @@ class VoiceTyper:
         self._cimco_mode = False
         self._cimco_speaking = False
         self._cimco_history = []
+
+    def _should_stream_audio(self) -> bool:
+        """Return True if we should be streaming audio (Toggle ON or PTT held)."""
+        return self._listening_flag.is_set() or self._ptt_active
 
     # ------------------------------------------------------------------
     # Deepgram connection management (v5.x SDK with context manager)
@@ -470,7 +477,8 @@ Keep responses under 2 sentences.'''
 
     def _on_key_press(self, key):  # pragma: no cover - interactive
         try:
-            if key == pynput_keyboard.Key.f8:
+            # F8 or Media Previous (common on laptops without Fn held) toggles listening
+            if key == pynput_keyboard.Key.f8 or key == pynput_keyboard.Key.media_previous:
                 if self._listening_flag.is_set():
                     self._listening_flag.clear()
                     logging.info("Listening PAUSED (F8 pressed)")
@@ -483,13 +491,32 @@ Keep responses under 2 sentences.'''
                     logging.info("🤖 CIMCO AI MODE ENABLED (F9) - Speech goes to inventory AI")
                 else:
                     logging.info("⌨️ TYPING MODE ENABLED (F9) - Speech types text")
+            else:
+                # Handle PTT (Alt keys)
+                if key in (pynput_keyboard.Key.alt, pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r, pynput_keyboard.Key.alt_gr):
+                    if not self._ptt_active:
+                        self._ptt_active = True
+                        logging.info("🎤 PTT ACTIVE (Alt held)")
         except Exception:
             # Ignore unexpected key values
             return
 
+    def _on_key_release(self, key):
+        """Handle key release for PTT."""
+        try:
+            if key in (pynput_keyboard.Key.alt, pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r, pynput_keyboard.Key.alt_gr):
+                if self._ptt_active:
+                    self._ptt_active = False
+                    logging.info("🎤 PTT RELEASED")
+        except Exception:
+            pass
+
     def _start_hotkey_listener(self) -> None:
-        """Start keyboard listener for F8 toggle."""
-        listener = pynput_keyboard.Listener(on_press=self._on_key_press)
+        """Start keyboard listener for F8 toggle and PTT."""
+        listener = pynput_keyboard.Listener(
+            on_press=self._on_key_press,
+            on_release=self._on_key_release
+        )
         listener.daemon = True
         listener.start()
 

@@ -2,6 +2,12 @@
 
 A system-wide voice-to-text application for Linux Mint that provides universal speech recognition with global hotkey support (F5). The system integrates with existing speech recognition components and provides seamless text insertion across all applications.
 
+## Demo
+
+![Voice Typer Demo](demo.gif)
+
+*Record a demo: Install `peek` (`sudo apt install peek`), record 10-15 seconds of using the voice typer, and replace `demo.gif` with your recording.*
+
 ## Features
 
 - **Real-time Streaming** (Recommended): Deepgram Nova-2 for instant voice-to-text

@@ -62,11 +62,22 @@ class ConfigManager:
             'device': 'cpu',
             'fp16': 'false'
         }
+
+        # Transcription engine selection: which backend to use for speech-to-text.
+        # Supported values:
+        #   - 'whisper'  (local Whisper model)
+        #   - 'deepgram' (Deepgram Nova via API)
+        self.config['Engine'] = {
+            'backend': 'whisper'
+        }
         
         self.config['TextInsertion'] = {
             'primary_method': 'clipboard',
             'fallback_method': 'keyboard',
             'delay_before_insert': '0.1',
+            # When falling back to simulated typing, per-character delay can make long transcriptions feel extremely slow.
+            # Keep this at 0.0 by default; increase only if a specific application drops characters.
+            'keyboard_interval': '0.0',
             'clear_clipboard_after': 'true',
             'supported_apps': 'firefox,chrome,chromium,brave,code,code-oss,sublime_text,gedit,mousepad,leafpad,libreoffice,libreoffice-writer,terminal,gnome-terminal,xfce4-terminal,konsole,tilix,terminator'
         }

@@ -1,0 +1,887 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "1",
+        "title": "Implement Pynput Keyboard Listener",
+        "description": "Set up a keyboard listener using the pynput library to detect Alt key presses (both left and right) and F8 key presses.",
+        "details": "Use `pynput.keyboard.Listener` to listen for key press and release events.  Specifically, monitor for `Key.alt_l`, `Key.alt_r`, and `Key.f8`. Store the state of the Alt key (pressed or released) and F8 key (pressed or released).",
+        "testStrategy": "Manually test by pressing and releasing Alt and F8 keys and verifying that the corresponding events are detected and the internal state is updated correctly. Log key press/release events to console for verification.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Initialize Keyboard Listener",
+            "description": "Set up the basic structure for the pynput keyboard listener.",
+            "dependencies": [],
+            "details": "Import the `pynput.keyboard` library. Create a `Listener` object. Define empty functions for `on_press` and `on_release` events. Start the listener in a non-blocking way.",
+            "status": "pending",
+            "testStrategy": "Verify that the listener starts without errors and the program doesn't block.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement Alt Key Press/Release Detection",
+            "description": "Detect left and right Alt key presses and releases.",
+            "dependencies": [
+              1
+            ],
+            "details": "In the `on_press` and `on_release` functions, check if the pressed/released key is `Key.alt_l` or `Key.alt_r`. Print a message to the console when Alt is pressed or released.",
+            "status": "pending",
+            "testStrategy": "Manually press and release the left and right Alt keys and verify that the corresponding messages are printed to the console.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement F8 Key Press Detection",
+            "description": "Detect F8 key presses.",
+            "dependencies": [
+              1
+            ],
+            "details": "In the `on_press` function, check if the pressed key is `Key.f8`. Print a message to the console when F8 is pressed.",
+            "status": "pending",
+            "testStrategy": "Manually press the F8 key and verify that the corresponding message is printed to the console.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Store Alt Key State",
+            "description": "Store the state of the Alt key (pressed or released) in a variable.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create a boolean variable `alt_pressed`. In the `on_press` function, if Alt is pressed, set `alt_pressed = True`. In the `on_release` function, if Alt is released, set `alt_pressed = False`. Print the value of `alt_pressed` to the console whenever it changes.",
+            "status": "pending",
+            "testStrategy": "Manually press and release the Alt key and verify that the `alt_pressed` variable is updated correctly and its value is printed to the console.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Store F8 Key State",
+            "description": "Store the state of the F8 key (pressed or released) in a variable.",
+            "dependencies": [
+              3
+            ],
+            "details": "Create a boolean variable `f8_pressed`. In the `on_press` function, if F8 is pressed, toggle the value of `f8_pressed`. Print the value of `f8_pressed` to the console whenever it changes.",
+            "status": "pending",
+            "testStrategy": "Manually press the F8 key multiple times and verify that the `f8_pressed` variable is toggled correctly and its value is printed to the console.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-01-22T06:21:04.802Z"
+      },
+      {
+        "id": "2",
+        "title": "Introduce `is_listening` State Logic",
+        "description": "Implement the `is_listening` state based on the combination of toggle (F8) and PTT (Alt) states.",
+        "details": "Create a boolean variable `is_listening`.  Set `is_listening = toggle_state OR ptt_state`. `toggle_state` represents the state of the F8 key (true if toggled on, false otherwise). `ptt_state` represents the state of the Alt key (true if pressed, false if released).",
+        "testStrategy": "Test by varying the Alt and F8 key states and verifying that `is_listening` is updated correctly according to the `OR` logic. Log the value of `is_listening` to the console.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define `toggle_state` and `ptt_state` variables",
+            "description": "Declare boolean variables `toggle_state` and `ptt_state` to store the states of the F8 and Alt keys, respectively.",
+            "dependencies": [],
+            "details": "Initialize `toggle_state` to `False` and `ptt_state` to `False` at the beginning of the script. These variables will be updated by the keyboard listener.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement `is_listening` calculation",
+            "description": "Create a function or inline expression to calculate the `is_listening` state based on `toggle_state` and `ptt_state`.",
+            "dependencies": [],
+            "details": "The `is_listening` state should be calculated as `is_listening = toggle_state OR ptt_state`. This logic will determine when the application is actively listening for voice input.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Update `is_listening` in keyboard listener",
+            "description": "Within the keyboard listener, update the `is_listening` variable whenever `toggle_state` or `ptt_state` changes.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "After updating `toggle_state` (on F8 press) or `ptt_state` (on Alt press/release), recalculate `is_listening` and update its value.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Log `is_listening` state",
+            "description": "Add logging to print the value of `is_listening` to the console whenever it changes.",
+            "dependencies": [
+              3
+            ],
+            "details": "Use the `logging` module to print a message indicating the new value of `is_listening` (e.g., \"is_listening: True\" or \"is_listening: False\").",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Test `is_listening` logic",
+            "description": "Manually test the `is_listening` logic by varying the states of the F8 and Alt keys and verifying the output.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Press and release the Alt key with F8 toggled on and off. Verify that `is_listening` is `True` when either Alt is pressed or F8 is toggled on, and `False` otherwise. Check the console output to confirm the correct behavior.",
+            "status": "pending",
+            "testStrategy": "Vary the Alt and F8 key states and verify that `is_listening` is updated correctly according to the `OR` logic. Log the value of `is_listening` to the console.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "3",
+        "title": "Modify Streamer to Respect `is_listening`",
+        "description": "Modify the `Streamer` class to only send audio bytes to Deepgram when `is_listening` is true.",
+        "details": "Within the `Streamer`'s audio processing loop, add a conditional check for `is_listening`. Only send audio data to Deepgram if `is_listening` is true. Otherwise, skip sending data.",
+        "testStrategy": "Test by holding Alt (PTT) and verifying that audio is sent to Deepgram and transcribed. Release Alt and verify that no audio is sent, and no transcription occurs. Toggle F8 on and verify continuous transcription. Toggle F8 off and verify no transcription occurs unless Alt is held.",
+        "priority": "high",
+        "dependencies": [
+          "2"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Locate Audio Processing Loop in Streamer",
+            "description": "Identify the specific section of code within the `Streamer` class where audio data is processed and sent to Deepgram.",
+            "dependencies": [],
+            "details": "Examine the `Streamer` class's methods to find the loop responsible for reading audio data from the microphone and transmitting it to the Deepgram API. Look for functions handling audio buffers.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement Conditional Check for `is_listening`",
+            "description": "Add an `if` statement within the audio processing loop to check the value of the `is_listening` variable.",
+            "dependencies": [
+              1
+            ],
+            "details": "Insert an `if is_listening:` statement before the code that sends audio data to Deepgram. This will control whether the data is sent based on the `is_listening` state.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Send Audio Data Conditionally",
+            "description": "Move the Deepgram audio sending logic inside the `if` block, so it only executes when `is_listening` is true.",
+            "dependencies": [
+              2
+            ],
+            "details": "Indent the code that transmits audio data to Deepgram within the `if is_listening:` block. This ensures that the data is only sent when the condition is met.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Prevent Sending Data When Not Listening",
+            "description": "Ensure no audio data is sent to Deepgram when `is_listening` is false. This might involve skipping the send operation or sending silence.",
+            "dependencies": [
+              2
+            ],
+            "details": "When `is_listening` is false, the code should either skip sending any data or send a small amount of silence to maintain the connection without incurring transcription costs.",
+            "status": "pending",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Test Streamer with `is_listening` Logic",
+            "description": "Verify that the `Streamer` only sends audio to Deepgram when `is_listening` is true, using both PTT and toggle modes.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Hold Alt (PTT) and verify audio is sent and transcribed. Release Alt and verify no audio is sent. Toggle F8 on and verify continuous transcription. Toggle F8 off and verify no transcription unless Alt is held.",
+            "status": "pending",
+            "testStrategy": "Test by holding Alt (PTT) and verifying that audio is sent to Deepgram and transcribed. Release Alt and verify that no audio is sent, and no transcription occurs. Toggle F8 on and verify continuous transcription. Toggle F8 off and verify no transcription occurs unless Alt is held.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "4",
+        "title": "Implement Alt Key Press/Release Handling",
+        "description": "Implement the logic to set `ptt_state` to true when Alt is pressed and false when Alt is released.",
+        "details": "In the keyboard listener, when `Key.alt_l` or `Key.alt_r` is pressed, set `ptt_state = True`. When `Key.alt_l` or `Key.alt_r` is released, set `ptt_state = False`.",
+        "testStrategy": "Test by pressing and releasing the Alt keys and verifying that `ptt_state` is updated correctly. Log the value of `ptt_state` to the console.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Import Required Pynput Keyboard Module",
+            "description": "Add the necessary import statement for pynput keyboard listener and Key constants to the main script file.",
+            "dependencies": [],
+            "details": "Import `Listener` from `pynput.keyboard` and `Key` from `pynput.keyboard`. Ensure no naming conflicts with existing imports.",
+            "status": "pending",
+            "testStrategy": "Verify no import errors occur when running the script.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Declare Global ptt_state Variable",
+            "description": "Initialize a global boolean variable `ptt_state` to track Alt key press/release status.",
+            "dependencies": [],
+            "details": "Define `ptt_state = False` at module level or use a global declaration to make it accessible across listener callbacks.",
+            "status": "pending",
+            "testStrategy": "Check that `ptt_state` is defined and initializes to False via print or debugger.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement Alt Key Press Handler",
+            "description": "Add logic in keyboard listener on_press callback to set `ptt_state = True` for both left and right Alt keys.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "In the `on_press` function: if key in [Key.alt_l, Key.alt_r], set global `ptt_state = True` and optionally log the change.",
+            "status": "pending",
+            "testStrategy": "Press Alt keys and verify `ptt_state` becomes True via console log.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement Alt Key Release Handler",
+            "description": "Add logic in keyboard listener on_release callback to set `ptt_state = False` for both left and right Alt keys.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "In the `on_release` function: if key in [Key.alt_l, Key.alt_r], set global `ptt_state = False` and optionally log the change.",
+            "status": "pending",
+            "testStrategy": "Release Alt keys and verify `ptt_state` becomes False via console log.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Initialize and Start Keyboard Listener",
+            "description": "Set up and start the pynput keyboard listener with the defined press/release callbacks.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Create `Listener(on_press=on_press, on_release=on_release)` and call `listener.start()` or `listener.join()` in main execution flow.",
+            "status": "pending",
+            "testStrategy": "Run the application, press/release Alt keys, and confirm `ptt_state` toggles correctly in logs without crashes.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "5",
+        "title": "Implement F8 Key Toggle Handling",
+        "description": "Implement the logic to toggle `toggle_state` when F8 is pressed.",
+        "details": "In the keyboard listener, when `Key.f8` is pressed, toggle the value of `toggle_state` (if it's true, set it to false; if it's false, set it to true).",
+        "testStrategy": "Test by pressing the F8 key and verifying that `toggle_state` is toggled correctly. Log the value of `toggle_state` to the console.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Declare toggle_state Variable",
+            "description": "Add a boolean variable toggle_state to store the F8 toggle state.",
+            "dependencies": [],
+            "details": "Initialize toggle_state as False at the module or class level where other state variables like ptt_state are defined, ensuring it is accessible to the keyboard listener.",
+            "status": "pending",
+            "testStrategy": "Verify toggle_state is declared and initialized to False by checking its value in logs before any key presses.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add F8 Press Detection in Listener",
+            "description": "Modify the pynput keyboard listener to detect Key.f8 press events.",
+            "dependencies": [
+              1
+            ],
+            "details": "In the on_press callback of Listener, add a condition to check if key == Key.f8, and log the event for verification.",
+            "status": "pending",
+            "testStrategy": "Press F8 and confirm the console logs show F8 press detection without toggling yet.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement Toggle Logic for F8",
+            "description": "Add code to invert toggle_state when F8 is pressed.",
+            "dependencies": [
+              2
+            ],
+            "details": "Inside the Key.f8 press handler, set toggle_state = not toggle_state to flip between True and False.",
+            "status": "pending",
+            "testStrategy": "Press F8 multiple times and log toggle_state after each press to verify it alternates correctly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Log Toggle State Changes",
+            "description": "Add console logging to track toggle_state after each F8 toggle.",
+            "dependencies": [
+              3
+            ],
+            "details": "After toggling, print a message like 'toggle_state changed to: {toggle_state}' to console for debugging and verification.",
+            "status": "pending",
+            "testStrategy": "Review console output after F8 presses to ensure logs accurately reflect state changes.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Test and Verify F8 Toggle Functionality",
+            "description": "Conduct full tests to ensure F8 toggles toggle_state reliably.",
+            "dependencies": [
+              4
+            ],
+            "details": "Run the listener, press/release F8 repeatedly, verify no interference with Alt handling, and confirm state persists across events.",
+            "status": "pending",
+            "testStrategy": "Press F8 to toggle on (True), press again to off (False), check logs, test with Alt presses to ensure independence.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "6",
+        "title": "Set Initial State to Paused (Safe Mode)",
+        "description": "Ensure the system starts in a paused state by initializing `toggle_state` and `ptt_state` to false.",
+        "details": "At the beginning of the `voice_typer.py` script, initialize `toggle_state = False` and `ptt_state = False`.",
+        "testStrategy": "Verify that when the script starts, no audio is sent to Deepgram unless Alt is held or F8 is pressed.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Locate script initialization point",
+            "description": "Identify the correct location at the beginning of voice_typer.py to add initial variable declarations before any listeners or main logic.",
+            "dependencies": [],
+            "details": "Open voice_typer.py and find the top-level scope after imports but before any function definitions, listener setup, or main execution block. Ensure no conflicting variable declarations exist.",
+            "status": "pending",
+            "testStrategy": "Verify script structure by checking that variables will be accessible globally to keyboard listener callbacks and main loop.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Declare toggle_state variable",
+            "description": "Add the toggle_state variable initialization with initial value False at the identified script beginning.",
+            "dependencies": [
+              1
+            ],
+            "details": "Insert the line `toggle_state = False` in the global scope at the beginning of voice_typer.py. Use proper Python syntax with no indentation.",
+            "status": "pending",
+            "testStrategy": "Add temporary print statement `print('Initial toggle_state:', toggle_state)` after declaration and run script to confirm False value on startup.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Declare ptt_state variable",
+            "description": "Add the ptt_state variable initialization with initial value False immediately after toggle_state.",
+            "dependencies": [
+              2
+            ],
+            "details": "Insert the line `ptt_state = False` right after the toggle_state declaration. Both variables should be at the same indentation level (global scope).",
+            "status": "pending",
+            "testStrategy": "Add temporary print statement `print('Initial ptt_state:', ptt_state)` after declaration and run script to confirm False value on startup.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Add startup state logging",
+            "description": "Implement console logging to verify both states are correctly initialized to paused mode on script startup.",
+            "dependencies": [
+              3
+            ],
+            "details": "Add logging lines: `print('System starting in SAFE PAUSED MODE')`, `print(f'toggle_state: {toggle_state}, ptt_state: {ptt_state}')` right after both variable declarations.",
+            "status": "pending",
+            "testStrategy": "Run the script and verify console output shows both states as False and confirms safe paused mode before any listeners start.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Verify global variable accessibility",
+            "description": "Confirm that toggle_state and ptt_state are accessible from keyboard listener callbacks and main logic.",
+            "dependencies": [
+              4
+            ],
+            "details": "In existing or planned callback functions (from Tasks 4 & 5), use `global toggle_state` and `global ptt_state` declarations at function start to modify these variables.",
+            "status": "pending",
+            "testStrategy": "Run script with temporary test callbacks that read/modify both variables and log their values to confirm global scope access works correctly.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-01-22T06:21:45.886Z"
+      },
+      {
+        "id": "7",
+        "title": "Optimize Deepgram Streaming Connection",
+        "description": "Minimize unnecessary Deepgram reconnections when switching between PTT and Toggle modes.",
+        "details": "When `is_listening` changes, avoid closing and reopening the Deepgram stream if possible. Instead, pause and resume the audio stream. If reconnection is unavoidable, handle it gracefully.",
+        "testStrategy": "Test by rapidly switching between PTT and Toggle modes and monitoring the Deepgram connection. Verify that reconnections are minimized and that the system remains stable.",
+        "priority": "medium",
+        "dependencies": [
+          "3"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Analyze Current Deepgram Connection Logic",
+            "description": "Review the existing code that handles Deepgram WebSocket connection, focusing on how `is_listening` changes trigger close/reopen operations.",
+            "dependencies": [],
+            "details": "Examine the Streamer class and connection management code. Identify exact points where the WebSocket is closed and reopened based on PTT/Toggle mode switches. Document current behavior with code snippets and log outputs.",
+            "status": "pending",
+            "testStrategy": "Run the application, switch modes rapidly, and log connection events to verify current reconnection frequency.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement Audio Buffering for Pause/Resume",
+            "description": "Add an audio buffer in the Streamer to hold audio data when `is_listening` is false, enabling seamless resumption without reconnection.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create a circular buffer (100-250ms capacity per Deepgram best practices) to store incoming audio bytes. When `is_listening` becomes true, flush buffered audio first, then resume live streaming. Use 100ms chunks for low latency.",
+            "status": "pending",
+            "testStrategy": "Verify buffer stores audio during pause (toggle off), then sends buffered + live audio on resume without WebSocket close/reopen.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Modify Streamer to Conditionally Send Audio",
+            "description": "Update the audio processing loop to skip Deepgram sends when `is_listening` is false while keeping the WebSocket connection alive.",
+            "dependencies": [
+              1
+            ],
+            "details": "In the Streamer's main loop, add `if is_listening:` check before `deepgram_socket.send(audio_chunk)`. Maintain periodic pings/keep-alives to prevent WebSocket timeout (Deepgram 60-min limit).",
+            "status": "pending",
+            "testStrategy": "Monitor network traffic: confirm no audio bytes sent to Deepgram when paused, but WebSocket remains open (no 1006 close codes).",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Add Graceful Reconnection with Exponential Backoff",
+            "description": "Implement reconnection logic only when WebSocket actually closes, using exponential backoff to handle unavoidable disconnects.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Create `reconnect_deepgram()` function with backoff (1s → 30s max, jitter). On reconnect, replay last 200ms buffered audio to fill transcript gaps. Integrate into error handlers for onclose/onerror events.",
+            "status": "pending",
+            "testStrategy": "Simulate network drops (force close WebSocket), verify backoff delays, and check transcript continuity after replay.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add Connection State Monitoring and Logging",
+            "description": "Implement logging and metrics to track connection stability and reconnection events during mode switches.",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Add metrics: `connection_uptime`, `reconnect_count`, `pause_resume_events`. Log WebSocket state changes and `is_listening` transitions. Expose via console or debug endpoint for testing.",
+            "status": "pending",
+            "testStrategy": "Rapidly switch PTT/Toggle 50+ times, verify logs show <5% reconnections, stable transcripts, no gaps >300ms.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "8",
+        "title": "Refactor Code for Modularity (Optional)",
+        "description": "Refactor the keyboard input logic into a separate `src/input_strategy.py` file for better organization and maintainability.",
+        "details": "Create a new file `src/input_strategy.py`. Move the keyboard listener and related state variables (`toggle_state`, `ptt_state`, `is_listening`) into this file. Create a class or functions to manage the input strategy. Import and use this module in `voice_typer.py`.",
+        "testStrategy": "Ensure that all functionality remains the same after refactoring. Run all existing tests to verify that the system still works as expected.",
+        "priority": "low",
+        "dependencies": [
+          "5",
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create src/input_strategy.py file",
+            "description": "Create a new Python file named input_strategy.py in the src directory to house the refactored keyboard input logic.",
+            "dependencies": [],
+            "details": "Use standard file creation in the project structure under src/. Add initial imports for pynput.keyboard and necessary types. Include file docstring explaining the module's purpose for keyboard input management.",
+            "status": "pending",
+            "testStrategy": "Verify file is created in correct location with proper initial structure and no syntax errors via linter.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Define InputStrategy class with state variables",
+            "description": "Implement an InputStrategy class in input_strategy.py that encapsulates toggle_state, ptt_state, and is_listening variables along with initialization.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create a class with __init__ method initializing self.toggle_state = False, self.ptt_state = False, self.is_listening = False. Add properties or direct accessors for these states. Include docstrings for clarity.",
+            "status": "pending",
+            "testStrategy": "Unit test class instantiation and verify initial state values are correctly set to False.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Move keyboard listener logic to InputStrategy",
+            "description": "Implement the pynput keyboard listener setup and event handlers within the InputStrategy class, including Alt and F8 key handling.",
+            "dependencies": [
+              2
+            ],
+            "details": "Add methods like setup_listener(), on_press(), on_release() that handle Key.alt_l, Key.alt_r, Key.f8 events. Update ptt_state on Alt press/release and toggle toggle_state on F8 press. Compute is_listening as ptt_state or toggle_state.",
+            "status": "pending",
+            "testStrategy": "Mock pynput events and test that states update correctly for Alt press/release and F8 toggle scenarios.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Remove keyboard logic from voice_typer.py",
+            "description": "Remove all keyboard listener code, state variables, and related logic from the main voice_typer.py file.",
+            "dependencies": [
+              3
+            ],
+            "details": "Delete imports for pynput.keyboard, remove global toggle_state/ptt_state/is_listening variables, and delete listener setup/run code. Clean up any direct references to these states.",
+            "status": "pending",
+            "testStrategy": "Verify voice_typer.py parses without syntax errors and no keyboard-related code remains via grep/search.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Integrate InputStrategy into voice_typer.py",
+            "description": "Import InputStrategy class and integrate it into voice_typer.py to maintain existing functionality.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Add 'from input_strategy import InputStrategy', instantiate strategy = InputStrategy(), call strategy.setup_listener().start() in main. Replace all is_listening checks with strategy.is_listening. Ensure Streamer uses strategy states.",
+            "status": "pending",
+            "testStrategy": "Run full application and existing tests. Verify Alt PTT and F8 toggle behave identically to pre-refactor. Check transcription triggers correctly.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "9",
+        "title": "Add Logging and Error Handling",
+        "description": "Implement logging to track key events and system state, and add error handling to gracefully handle unexpected situations.",
+        "details": "Use the `logging` module to log key press/release events, `is_listening` state changes, and any errors that occur. Implement `try-except` blocks to catch potential exceptions and log them.",
+        "testStrategy": "Simulate errors (e.g., by disconnecting the microphone) and verify that the errors are logged correctly. Review the logs to ensure that key events and state changes are being tracked.",
+        "priority": "medium",
+        "dependencies": [
+          "5",
+          "4"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Configure Python Logging Module",
+            "description": "Set up the logging configuration with console and file handlers, appropriate log levels, and formatters for structured output.",
+            "dependencies": [],
+            "details": "Use logging.getLogger(__name__), add StreamHandler for console and FileHandler for 'ptt_app.log' with DEBUG level, set Formatter with timestamp, level, and message. Call at module startup.",
+            "status": "pending",
+            "testStrategy": "Verify logs appear in console and file with correct format by triggering logger.info('Logger initialized') after setup.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Create Global Logger Instance",
+            "description": "Instantiate a module-level logger object accessible throughout the application for consistent logging.",
+            "dependencies": [
+              1
+            ],
+            "details": "Define logger = logging.getLogger(__name__) at module top-level, configure handlers and formatters from subtask 1, ensure logger.setLevel(logging.DEBUG).",
+            "status": "pending",
+            "testStrategy": "Test logger.info('Test message') outputs to both console and file with proper formatting.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Add Logging to Keyboard Listener Events",
+            "description": "Implement logging for Alt key press/release and F8 key events in the pynput keyboard listener callbacks.",
+            "dependencies": [
+              2
+            ],
+            "details": "In on_press/on_release handlers from Task 1 & 4, add logger.info(f'Key pressed: {key}') and logger.info(f'Key released: {key}'), include ptt_state and toggle_state values.",
+            "status": "pending",
+            "testStrategy": "Press/release Alt and F8 keys, verify log entries show correct key names and state changes.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Log is_listening State Changes",
+            "description": "Add logging whenever the is_listening state is updated based on toggle_state OR ptt_state logic.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "In the logic from Task 2 where is_listening is calculated, add logger.debug(f'is_listening changed to {is_listening}, toggle={toggle_state}, ptt={ptt_state}').",
+            "status": "pending",
+            "testStrategy": "Toggle F8 on/off and hold/release Alt, check logs confirm correct state transitions.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Implement Try-Except in Keyboard Listener",
+            "description": "Wrap pynput keyboard listener start/stop and event handlers with try-except to catch and log exceptions.",
+            "dependencies": [
+              3
+            ],
+            "details": "Add try: listener.start() except Exception as e: logger.error(f'Keyboard listener error: {e}', exc_info=True). Handle KeyboardInterrupt separately.",
+            "status": "pending",
+            "testStrategy": "Raise simulated exception (e.g., invalid key), verify error logged with traceback.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Add Error Handling to State Update Logic",
+            "description": "Protect ptt_state, toggle_state, and is_listening updates with try-except blocks to handle any unexpected errors.",
+            "dependencies": [
+              4
+            ],
+            "details": "Wrap state assignments in try-except: try: ptt_state = True except Exception as e: logger.error(f'State update failed: {e}'). Ensure atomic updates.",
+            "status": "pending",
+            "testStrategy": "Inject faulty state update (e.g., assign non-boolean), confirm error logged and previous state preserved.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Implement Logging in Streamer Audio Loop",
+            "description": "Add debug logging for audio processing decisions based on is_listening state in the Streamer class.",
+            "dependencies": [
+              4
+            ],
+            "details": "In Task 3's audio loop: if is_listening: logger.debug('Sending audio to Deepgram') else: logger.debug('Skipping audio - not listening'). Log bytes sent.",
+            "status": "pending",
+            "testStrategy": "Run streamer with is_listening True/False, verify logs reflect send/skip decisions.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Add Try-Except to Streamer Audio Processing",
+            "description": "Wrap audio capture, processing, and Deepgram send operations with error handling and logging.",
+            "dependencies": [
+              7
+            ],
+            "details": "try: audio_bytes = capture_audio(); streamer.send(audio_bytes) except Exception as e: logger.error(f'Streamer error: {e}', exc_info=True); continue loop.",
+            "status": "pending",
+            "testStrategy": "Simulate audio capture failure (mock empty input), verify error logged but loop continues.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 9,
+            "title": "Add Application Startup and Shutdown Logging",
+            "description": "Log application initialization, listener starts, and graceful shutdown events.",
+            "dependencies": [
+              2
+            ],
+            "details": "At main(): logger.info('PTT application starting'); on exit/KeyboardInterrupt: logger.info('Shutting down'); logger.handlers.clear() if needed.",
+            "status": "pending",
+            "testStrategy": "Start/stop app normally and with Ctrl+C, check startup/shutdown logs present.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 10,
+            "title": "Test Logging and Error Handling Coverage",
+            "description": "Verify comprehensive logging coverage and error resilience through simulated failures.",
+            "dependencies": [
+              5,
+              6,
+              8,
+              9
+            ],
+            "details": "Run full app, test: key events, state changes, audio send/skip, disconnect mic simulation, invalid inputs. Review logs for completeness.",
+            "status": "pending",
+            "testStrategy": "Check logs contain all expected events/errors; ensure no crashes on simulated failures; validate log levels filter correctly.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "10",
+        "title": "Integration Testing",
+        "description": "Perform end-to-end testing to ensure that the hybrid input mode and safety improvements work correctly in a real-world scenario.",
+        "details": "Test the system in various environments (e.g., quiet room, noisy room) and with different audio sources (e.g., music, TV). Verify that the PTT and Toggle modes work as expected and that the system starts in a paused state. Ensure that the Deepgram transcription is accurate and responsive.",
+        "testStrategy": "Manually test the system in different scenarios and document the results. Use automated testing tools to simulate user input and verify system behavior.",
+        "priority": "high",
+        "dependencies": [
+          "7",
+          "9"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Prepare Test Environments",
+            "description": "Set up multiple testing environments including quiet room, noisy room with background sounds, and different audio sources like music and TV.",
+            "dependencies": [],
+            "details": "Create physical or simulated setups: quiet room (no background noise), noisy room (fan, conversations), music playback via speakers, TV audio streams. Document equipment and noise levels.",
+            "status": "pending",
+            "testStrategy": "Verify environments produce distinct audio conditions measurable by decibel levels and qualitative descriptions.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Verify Initial Paused State",
+            "description": "Test that the system starts in paused state with no audio sent to Deepgram until input mode activated.",
+            "dependencies": [
+              1
+            ],
+            "details": "Launch voice_typer.py, monitor network traffic to Deepgram API, confirm no transcription requests occur without Alt or F8 input. Check toggle_state and ptt_state logs.",
+            "status": "pending",
+            "testStrategy": "Manual launch and observation; use Wireshark or logs to confirm no API calls in first 30 seconds.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Test PTT Mode in Quiet Environment",
+            "description": "Validate Alt key PTT mode: press Alt to start transcription, release to stop, in quiet room with speech input.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Press left/right Alt, speak clear phrases, verify Deepgram receives audio only during press, transcription accurate and appears in target app. Test both Alt keys.",
+            "status": "pending",
+            "testStrategy": "Speak 5 test phrases, compare transcribed text to expected, time response latency under 2 seconds.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Test Toggle Mode in Quiet Environment",
+            "description": "Validate F8 toggle mode: press F8 to enable/disable continuous transcription in quiet room.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Press F8 to toggle on, speak continuously, verify transcription flows; press F8 again to stop. Confirm state toggle via logs.",
+            "status": "pending",
+            "testStrategy": "Toggle 10 times, speak 3 phrases per state, verify start/stop and accuracy matches spoken words.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Test PTT Mode in Noisy Environment",
+            "description": "Evaluate PTT mode robustness: use Alt in noisy room, check transcription accuracy with background noise.",
+            "dependencies": [
+              1,
+              3
+            ],
+            "details": "Simulate noise (fan/TV), press Alt, speak test phrases at normal volume, assess Deepgram noise handling and word error rate.",
+            "status": "pending",
+            "testStrategy": "Record audio, compute WER (word error rate) <15%, manual review of 10 phrases.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Test Toggle Mode in Noisy Environment",
+            "description": "Evaluate toggle mode in noise: F8 to enable, speak with music/TV background, verify continuous accurate transcription.",
+            "dependencies": [
+              1,
+              4
+            ],
+            "details": "Enable toggle, expose to music/TV audio interference, speak for 1 minute, check real-time transcription quality and responsiveness.",
+            "status": "pending",
+            "testStrategy": "Monitor latency <3s per phrase, WER <20%, log interruptions or false triggers.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Test with Music Audio Source Interference",
+            "description": "Test both modes with music playing: ensure speech overrides music, no music transcription bleed.",
+            "dependencies": [
+              1,
+              3,
+              4
+            ],
+            "details": "Play music at 60-70dB, activate PTT or toggle, speak over it, verify only speech transcribed accurately.",
+            "status": "pending",
+            "testStrategy": "10 trials per mode, check for music words in output, speech accuracy >85%.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Test with TV Audio Source Interference",
+            "description": "Test both modes with TV audio: confirm system isolates user speech from TV dialogue.",
+            "dependencies": [
+              1,
+              3,
+              4
+            ],
+            "details": "TV at conversational volume, use PTT/toggle, speak commands, ensure TV content not transcribed.",
+            "status": "pending",
+            "testStrategy": "Speak 8 phrases, verify no TV phrases appear, response time consistent.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 9,
+            "title": "Validate Deepgram Responsiveness and Accuracy",
+            "description": "Across all tests, measure transcription latency and overall accuracy metrics.",
+            "dependencies": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "details": "Log timestamps for speech start/end vs transcription appearance, calculate average latency, aggregate WER from all scenarios.",
+            "status": "pending",
+            "testStrategy": "Target <2s latency, >90% accuracy quiet, >80% noisy; use standard WER formula.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 10,
+            "title": "Document Results and Identify Issues",
+            "description": "Compile test logs, screenshots, metrics into report; list pass/fail, bugs, recommendations.",
+            "dependencies": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "details": "Create table: scenario, mode, accuracy%, latency, issues. Prioritize safety failures. Suggest fixes if any.",
+            "status": "pending",
+            "testStrategy": "Review all data for patterns, ensure 100% coverage of requirements.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-01-22T06:36:17.026Z"
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-01-22T06:36:17.026Z",
+      "taskCount": 10,
+      "completedCount": 3,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}

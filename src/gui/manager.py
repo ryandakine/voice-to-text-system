@@ -16,6 +16,7 @@ from ..utils.logger import logger
 from ..utils.config_manager import config
 from ..utils.audio_utils import AudioManager
 from ..speech_processor import SpeechProcessor
+from ..deepgram_processor import DeepgramProcessor
 from ..text_insertion import TextInserter
 from ..hotkey_handler import HotkeyHandler
 from ..application import VoiceToTextApp
@@ -37,22 +38,13 @@ class VoiceToTextManager(Gtk.Window):
         self.recording = False
         self.processing = False
         
-        # Instantiate services (Dependency Composition)
+        # Shared audio manager
         self.audio_manager = AudioManager()
-        self.speech_processor = SpeechProcessor()
-        self.text_inserter = TextInserter()
-        self.hotkey_handler = HotkeyHandler()
-        
-        # Default strategy for GUI is Hotkey for now
-        self.input_strategy = HotkeyInputStrategy(self.hotkey_handler)
-        
-        self.app = VoiceToTextApp(
-            transcription_service=self.speech_processor,
-            output_service=self.text_inserter,
-            input_strategy=self.input_strategy,
-            audio_manager=self.audio_manager
-        )
+
+        # Build initial app based on selected engine
+        self.app = None
         self.app_thread = None
+        self._rebuild_app()
         
         # Create UI
         self._create_ui()
@@ -65,6 +57,37 @@ class VoiceToTextManager(Gtk.Window):
         
         logger.info("Voice-to-Text Manager GUI initialized")
     
+    def _rebuild_app(self):
+        """(Re)build the VoiceToTextApp based on current engine selection.
+
+        Lets the GUI switch between Whisper and Deepgram backends without
+        changing how recording or text insertion works.
+        """
+        try:
+            backend = config.get('Engine', 'backend', 'whisper')
+        except Exception:
+            backend = 'whisper'
+
+        if backend == 'deepgram':
+            logger.info("GUI Manager: using DeepgramProcessor as transcription engine")
+            self.speech_processor = DeepgramProcessor()
+        else:
+            logger.info("GUI Manager: using Whisper SpeechProcessor as transcription engine")
+            self.speech_processor = SpeechProcessor()
+
+        self.text_inserter = TextInserter()
+        self.hotkey_handler = HotkeyHandler()
+
+        # Default strategy for GUI is Hotkey toggle
+        self.input_strategy = HotkeyInputStrategy(self.hotkey_handler)
+
+        self.app = VoiceToTextApp(
+            transcription_service=self.speech_processor,
+            output_service=self.text_inserter,
+            input_strategy=self.input_strategy,
+            audio_manager=self.audio_manager
+        )
+
     def _create_ui(self):
         """Create the main user interface."""
         # Main container
@@ -258,8 +281,24 @@ class VoiceToTextManager(Gtk.Window):
         auto_start_box.pack_start(self.auto_start_switch, False, False, 0)
         
         general_box.pack_start(auto_start_box, False, False, 0)
+
+        # Engine selection
+        engine_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        engine_box.pack_start(Gtk.Label(label="Transcription Engine:"), False, False, 0)
+
+        self.engine_combo = Gtk.ComboBoxText()
+        self.engine_combo.append_text("Whisper (local)")
+        self.engine_combo.append_text("Deepgram (cloud)")
+        current_backend = config.get('Engine', 'backend', 'whisper')
+        if current_backend == 'deepgram':
+            self.engine_combo.set_active(1)
+        else:
+            self.engine_combo.set_active(0)
+        engine_box.pack_start(self.engine_combo, False, False, 0)
+
+        general_box.pack_start(engine_box, False, False, 0)
         
-        box.pack_start(general_frame, False, False, 0)
+        # Whisper settings
         
         # Whisper settings
         whisper_frame = Gtk.Frame(label="Whisper Settings")
@@ -646,6 +685,11 @@ class VoiceToTextManager(Gtk.Window):
             # Save general settings
             config.set('General', 'hotkey', self.hotkey_entry.get_text())
             config.set('General', 'auto_start', str(self.auto_start_switch.get_active()))
+
+            # Save engine selection
+            engine_label = self.engine_combo.get_active_text() if hasattr(self, 'engine_combo') else 'Whisper (local)'
+            backend = 'deepgram' if engine_label and 'Deepgram' in engine_label else 'whisper'
+            config.set('Engine', 'backend', backend)
             
             # Save Whisper settings
             config.set('Whisper', 'model', self.model_combo.get_active_text())
@@ -659,6 +703,11 @@ class VoiceToTextManager(Gtk.Window):
             config.set('Audio', 'sample_rate', self.sample_rate_combo.get_active_text())
             
             config.save_config()
+
+            # Rebuild app if system is not currently running so the new
+            # engine selection will take effect next time we start.
+            if not self.system_running:
+                self._rebuild_app()
             
             self._add_activity_message("Settings saved")
             self.status_message.set_text("Settings saved")

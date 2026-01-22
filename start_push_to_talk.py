@@ -13,10 +13,12 @@ src_path = project_root / "src"
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(src_path))
 
-# Import and run the push-to-talk main module
-from src.main_push_to_talk import main
+# Import the unified entrypoint and run it in push-to-talk mode
+from src.main import main
 
 if __name__ == "__main__":
-    print("Starting Voice-to-Text System with Push-to-Talk...")
-    print("Loading Whisper model (this may take a moment on first run)...")
+    print("Starting Voice-to-Text System (Push-to-Talk mode)...")
+    # Ensure we start in PTT mode even if other defaults/config exist
+    if "--mode" not in sys.argv:
+        sys.argv.extend(["--mode", "ptt"])
     sys.exit(main())

@@ -1,0 +1,28 @@
+# PRD: Hybrid Input Mode & Safety Improvements
+
+## 1. Problem Description
+The current voice typing system is "Always On" when toggled, which causes issues when listening to music or watching TV (background noise is transcribed). The user wants a "Push-to-Talk" (PTT) capability (using Alt key) in addition to the existing Toggle (F8) mode. The system should default to "Paused" (Safe Mode) to prevent accidental transcription.
+
+## 2. Goals & Objectives
+- **Hybrid Input**: Support both "Hold-to-Talk" (PTT) and "Toggle-to-Talk" logic simultaneously.
+- **Safety First**: System must start in a PAUSED state.
+- **PTT Logic**: Holding `Alt` (Left or Right) temporarily enables the microphone stream. Releasing it pauses the stream.
+- **Toggle Logic**: Pressing `F8` toggles the "Always On" state (overriding PTT).
+- **Deepgram Integration**: Ensure these input strategies work seamlessly with the Deepgram streaming connection, avoiding unnecessary reconnections if possible, or managing them efficiently.
+
+## 3. User Stories
+- As a user, I want to hold the Alt key to dictate a sentence and have it type immediately.
+- As a user, I want to release the Alt key and know the system is NOT listening, even if music is playing.
+- As a user, I want to press F8 to switch to "Hands-free" mode when I have a quiet environment and a lot to say.
+- As a user, I want the system to start up without immediately transcribing my background conversations.
+
+## 4. Technical Requirements
+- **File**: `voice_typer.py` (and potentially `src/input_strategy.py` if aligning with architecture).
+- **Libraries**: `pynput` for keyboard monitoring.
+- **Logic**:
+    - `is_listening` state is now a composite of `toggle_state OR ptt_state`.
+    - `Streamer` should only send bytes when `is_listening` is true.
+
+## 5. Out of Scope
+- Changing the underlying Deepgram model (keep Nova-2).
+- Changing the GUI (focus on `voice_typer.py` script for now).
