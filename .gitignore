@@ -5,6 +5,8 @@
 # Lock files
 *.lock
 voice_typer.lock
+*.pid
+*.bak
 
 # Node modules
 node_modules/

@@ -14,21 +14,8 @@ LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/voice-typer-$(date +%Y%m%d).log"
 
-start_voice_typer() {
-    echo "[$(date)] Starting Deepgram Voice Typer..." >> "$LOG_FILE"
+# Check if already running via our smart toggle script logic
+# Instead of an infinite loop that ignores existing instances, we delegate to the robust toggle script.
 
-    cd "$SCRIPT_DIR"
-
-    # Use the same virtualenv as the existing system
-    "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/voice_typer.py" \
-        >> "$LOG_FILE" 2>&1
-
-    echo "[$(date)] Deepgram Voice Typer stopped with exit code: $?" >> "$LOG_FILE"
-}
-
-# Keep the service running (restart if it crashes)
-while true; do
-    start_voice_typer
-    echo "[$(date)] Restarting Deepgram Voice Typer in 10 seconds..." >> "$LOG_FILE"
-    sleep 10
-done
+# Execute the robust toggle script (which handles singletons and tray icons)
+exec "$SCRIPT_DIR/toggle-voice-typer.sh"

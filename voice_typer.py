@@ -40,8 +40,9 @@ from typing import Optional
 
 import pyaudio
 from dotenv import load_dotenv
-from pynput import keyboard as pynput_keyboard
-from pynput.keyboard import Controller as KeyboardController
+import signal
+import psutil
+import atexit
 
 # Load .env BEFORE importing deepgram SDK (it reads env vars at initialization)
 _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -154,12 +155,13 @@ class VoiceTyper:
 
         self._stop_event = threading.Event()
         self._listening_flag = threading.Event()
-        self._listening_flag.clear()  # Start PAUSED (User preference for safety)
-        self._ptt_active = False      # Push-to-Talk state
-
-        self._keyboard = KeyboardController()
-
         self._mic = MicrophoneStreamer(self._send_audio, self._should_stream_audio, self._stop_event)
+        self._ptt_active = False  # Initialize PTT state before signals
+
+        # Setup signal handler for toggling listening (SIGUSR1)
+        signal.signal(signal.SIGUSR1, self._handle_toggle_signal)
+        # Setup signal handler for PTT (SIGUSR2)
+        signal.signal(signal.SIGUSR2, self._handle_ptt_signal)
 
         self._reconnect_lock = threading.Lock()
         self._reconnecting = False
@@ -178,6 +180,18 @@ class VoiceTyper:
         self._cimco_mode = False
         self._cimco_speaking = False
         self._cimco_history = []
+        
+        # Initial status write
+        self._update_status_file()
+
+    def _update_status_file(self):
+        """Write current state to /tmp/voice_typer_status."""
+        state = "ON" if self._listening_flag.is_set() else "OFF"
+        try:
+            with open("/tmp/voice_typer_status", "w") as f:
+                f.write(state)
+        except Exception as e:
+            logging.warning("Failed to write status file: %s", e)
 
     def _should_stream_audio(self) -> bool:
         """Return True if we should be streaming audio (Toggle ON or PTT held)."""
@@ -475,50 +489,23 @@ Keep responses under 2 sentences.'''
     # Hotkey handling
     # ------------------------------------------------------------------
 
-    def _on_key_press(self, key):  # pragma: no cover - interactive
-        try:
-            # F8 or Media Previous (common on laptops without Fn held) toggles listening
-            if key == pynput_keyboard.Key.f8 or key == pynput_keyboard.Key.media_previous:
-                if self._listening_flag.is_set():
-                    self._listening_flag.clear()
-                    logging.info("Listening PAUSED (F8 pressed)")
-                else:
-                    self._listening_flag.set()
-                    logging.info("Listening RESUMED (F8 pressed)")
-            elif key == pynput_keyboard.Key.f9:
-                self._cimco_mode = not self._cimco_mode
-                if self._cimco_mode:
-                    logging.info("🤖 CIMCO AI MODE ENABLED (F9) - Speech goes to inventory AI")
-                else:
-                    logging.info("⌨️ TYPING MODE ENABLED (F9) - Speech types text")
-            else:
-                # Handle PTT (Alt keys)
-                if key in (pynput_keyboard.Key.alt, pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r, pynput_keyboard.Key.alt_gr):
-                    if not self._ptt_active:
-                        self._ptt_active = True
-                        logging.info("🎤 PTT ACTIVE (Alt held)")
-        except Exception:
-            # Ignore unexpected key values
-            return
+    def _handle_toggle_signal(self, signum, frame):
+        """Toggle listening state on SIGUSR1."""
+        if self._listening_flag.is_set():
+            self._listening_flag.clear()
+            logging.info("Signal received: Listening PAUSED")
+        else:
+            self._listening_flag.set()
+            logging.info("Signal received: Listening RESUMED")
+        self._update_status_file()
 
-    def _on_key_release(self, key):
-        """Handle key release for PTT."""
-        try:
-            if key in (pynput_keyboard.Key.alt, pynput_keyboard.Key.alt_l, pynput_keyboard.Key.alt_r, pynput_keyboard.Key.alt_gr):
-                if self._ptt_active:
-                    self._ptt_active = False
-                    logging.info("🎤 PTT RELEASED")
-        except Exception:
-            pass
-
-    def _start_hotkey_listener(self) -> None:
-        """Start keyboard listener for F8 toggle and PTT."""
-        listener = pynput_keyboard.Listener(
-            on_press=self._on_key_press,
-            on_release=self._on_key_release
-        )
-        listener.daemon = True
-        listener.start()
+    def _handle_ptt_signal(self, signum, frame):
+        """Toggle PTT state on SIGUSR2."""
+        self._ptt_active = not self._ptt_active
+        if self._ptt_active:
+             logging.info("Signal received: PTT ACTIVE")
+        else:
+             logging.info("Signal received: PTT RELEASED")
 
     # ------------------------------------------------------------------
     # Public API
@@ -532,7 +519,7 @@ Keep responses under 2 sentences.'''
         self._mic.start()
 
         # Start hotkey listener
-        self._start_hotkey_listener()
+        # No internal hotkey listener - relying on external signals
 
         # Run the streaming loop (blocking, with reconnection)
         try:
@@ -562,12 +549,55 @@ Keep responses under 2 sentences.'''
             pass
 
 
+def enforce_singleton():
+    """Ensure only one instance runs. Kills older instances found in lock file."""
+    lock_file = "/tmp/voice_typer.pid"
+    
+    # Check for existing instance
+    if os.path.exists(lock_file):
+        try:
+            with open(lock_file, "r") as f:
+                old_pid = int(f.read().strip())
+            
+            if psutil.pid_exists(old_pid):
+                logging.warning(f"Found old instance (PID {old_pid}). Terminating it...")
+                try:
+                    p = psutil.Process(old_pid)
+                    p.terminate()
+                    p.wait(timeout=3)
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    # Force kill if needed
+                    if psutil.pid_exists(old_pid):
+                         os.kill(old_pid, signal.SIGKILL)
+                logging.info("Old instance terminated.")
+        except Exception as e:
+            logging.warning(f"Error checking lock file: {e}")
+
+    # Register our PID
+    try:
+        with open(lock_file, "w") as f:
+            f.write(str(os.getpid()))
+        
+        # Cleanup on exit
+        def remove_lock():
+            try:
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+            except: pass
+        atexit.register(remove_lock)
+        
+    except Exception as e:
+        logging.error(f"Failed to write lock file: {e}")
+        sys.exit(1)
+
 def main() -> None:
     logging.basicConfig(
         level=logging.DEBUG,
         format="[%(asctime)s] %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    
+    enforce_singleton()
 
     typer = VoiceTyper(model="nova-2")
     typer.run()
