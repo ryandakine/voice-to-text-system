@@ -162,6 +162,8 @@ class VoiceTyper:
         signal.signal(signal.SIGUSR1, self._handle_toggle_signal)
         # Setup signal handler for PTT (SIGUSR2)
         signal.signal(signal.SIGUSR2, self._handle_ptt_signal)
+        # Setup signal handler for OpenClaw mode toggle (SIGRTMIN)
+        signal.signal(signal.SIGRTMIN, self._handle_openclaw_toggle_signal)
 
         self._reconnect_lock = threading.Lock()
         self._reconnecting = False
@@ -176,10 +178,9 @@ class VoiceTyper:
         self._empty_transcript_count = 0
         self._last_successful_transcript_time = time.time()
         
-        # CIMCO AI mode (F9 toggles)
-        self._cimco_mode = False
-        self._cimco_speaking = False
-        self._cimco_history = []
+        # OpenClaw AI mode (F9 toggles)
+        self._openclaw_mode = False
+        self._openclaw_speaking = False
         
         # Initial status write
         self._update_status_file()
@@ -330,10 +331,10 @@ class VoiceTyper:
                                 self._last_transcript_time = current_time
                                 
                                 # Route based on mode
-                                if self._cimco_mode:
-                                    logging.info("🤖 CIMCO: %s", clean_transcript)
+                                if self._openclaw_mode:
+                                    logging.info("🦞 OpenClaw: %s", clean_transcript)
                                     threading.Thread(
-                                        target=self._handle_cimco_query,
+                                        target=self._handle_openclaw_query,
                                         args=(clean_transcript,),
                                         daemon=True
                                     ).start()
@@ -352,60 +353,38 @@ class VoiceTyper:
         except Exception as exc:
             logging.debug("Error processing message: %s", exc)
     
-    def _handle_cimco_query(self, user_text: str):
-        """Handle a query in CIMCO AI mode."""
-        import json
-        import re
-        import urllib.request
-        
-        OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-        
-        SYSTEM_PROMPT = '''You are CIMCO, a helpful AI assistant for an industrial scrapyard inventory system.
-Be concise - workers are busy. Answer questions about inventory, equipment, and parts.
-If asked about specific inventory data, explain you can help once connected to the database.
-Keep responses under 2 sentences.'''
+    def _handle_openclaw_query(self, user_text: str):
+        """Handle a query via OpenClaw (GLM-5)."""
+        import subprocess
         
         try:
-            # Build messages
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            messages.extend(self._cimco_history[-4:])  # Last 2 exchanges
-            messages.append({"role": "user", "content": user_text})
-            
-            # Call Ollama
-            data = json.dumps({
-                "model": OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False
-            }).encode('utf-8')
-            
-            req = urllib.request.Request(
-                f"{OLLAMA_URL}/api/chat",
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
+            # Use openclaw task for one-shot queries
+            result = subprocess.run(
+                ["openclaw", "task", "--no-stream", "--quiet", user_text],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=os.path.expanduser("~")
             )
             
-            with urllib.request.urlopen(req, timeout=30) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                reply = result.get("message", {}).get("content", "Sorry, no response.")
+            reply = result.stdout.strip() if result.stdout else "No response from OpenClaw."
+            if result.returncode != 0 and result.stderr:
+                logging.warning("OpenClaw stderr: %s", result.stderr)
             
-            logging.info("🤖 Reply: %s", reply)
-            
-            # Update history
-            self._cimco_history.append({"role": "user", "content": user_text})
-            self._cimco_history.append({"role": "assistant", "content": reply})
+            logging.info("🦞 Reply: %s", reply[:200] + "..." if len(reply) > 200 else reply)
             
             # Speak response (mute mic while speaking)
-            self._cimco_speaking = True
+            self._openclaw_speaking = True
             try:
                 self._speak_response(reply)
             finally:
                 time.sleep(0.3)
-                self._cimco_speaking = False
+                self._openclaw_speaking = False
                 
+        except subprocess.TimeoutExpired:
+            logging.error("OpenClaw timeout")
         except Exception as e:
-            logging.error("CIMCO error: %s", e)
+            logging.error("OpenClaw error: %s", e)
     
     def _speak_response(self, text: str):
         """Speak text using Deepgram TTS."""
@@ -506,6 +485,14 @@ Keep responses under 2 sentences.'''
              logging.info("Signal received: PTT ACTIVE")
         else:
              logging.info("Signal received: PTT RELEASED")
+
+    def _handle_openclaw_toggle_signal(self, signum, frame):
+        """Toggle OpenClaw AI mode on SIGRTMIN (F9)."""
+        self._openclaw_mode = not self._openclaw_mode
+        if self._openclaw_mode:
+            logging.info("🦞 OpenClaw mode ENABLED - voice commands will be sent to GLM-5")
+        else:
+            logging.info("🦞 OpenClaw mode DISABLED - back to typing mode")
 
     # ------------------------------------------------------------------
     # Public API

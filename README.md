@@ -75,7 +75,7 @@ The fastest way to get real-time voice-to-text working:
 ### Deepgram Voice Typer Controls
 
 - **F8**: Toggle listening on/off (pause/resume)
-- **F9**: Toggle CIMCO AI mode (voice assistant)
+- **F9**: Toggle OpenClaw AI mode (voice commands to GLM-5)
 - Run `./toggle-voice-typer.sh` again to stop
 
 ### Desktop Shortcut
@@ -400,13 +400,18 @@ See `src/health_integration/README.md` for detailed documentation and `src/healt
 
 ## Changelog
 
+### Version 1.3.0 (OpenClaw Integration)
+- Replaced CIMCO AI mode with OpenClaw integration
+- F9 now toggles OpenClaw mode for voice-to-AI commands
+- Voice commands sent to GLM-5 via OpenClaw gateway
+- TTS responses via Deepgram Aura
+
 ### Version 1.2.0 (Deepgram Real-time Streaming)
 - Added Deepgram Nova-2 real-time voice typer
 - Faster endpointing (200ms) for responsive transcription
 - Auto-reconnect on stale connections
 - Keepalive pings to maintain connection health
 - F8 toggle for pause/resume listening
-- F9 toggle for CIMCO AI assistant mode
 - Background operation via toggle script
 - Desktop notification support
 

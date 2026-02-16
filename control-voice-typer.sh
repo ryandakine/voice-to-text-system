@@ -1,6 +1,6 @@
 #!/bin/bash
 # Send control signals to voice_typer.py
-# Usage: ./control-voice-typer.sh [toggle|ptt]
+# Usage: ./control-voice-typer.sh [toggle|ptt|openclaw]
 
 ACTION=${1:-toggle}
 
@@ -28,4 +28,7 @@ if [ "$ACTION" == "toggle" ]; then
     notify-send -t 1000 -i audio-input-microphone "Voice Typer" "🔄 Toggled Listening"
 elif [ "$ACTION" == "ptt" ]; then
     kill -SIGUSR2 "$PID"
+elif [ "$ACTION" == "openclaw" ]; then
+    kill -SIGRTMIN "$PID"
+    notify-send -t 1000 -i audio-input-microphone "Voice Typer" "🦞 Toggled OpenClaw Mode"
 fi
