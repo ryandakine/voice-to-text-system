@@ -24,6 +24,20 @@ if [ -z "$PID" ]; then
 fi
 
 if [ "$ACTION" == "toggle" ]; then
+    # DEBOUNCE: Check if last toggle was < 0.5s ago
+    TIMESTAMP_FILE="/tmp/voice_typer_toggle_timer"
+    NOW=$(date +%s%3N) # Milliseconds
+    
+    if [ -f "$TIMESTAMP_FILE" ]; then
+        LAST=$(cat "$TIMESTAMP_FILE")
+        DIFF=$((NOW - LAST))
+        if [ "$DIFF" -lt 500 ]; then
+            # Ignore rapid key repeats
+            exit 0
+        fi
+    fi
+    echo "$NOW" > "$TIMESTAMP_FILE"
+
     kill -SIGUSR1 "$PID"
     notify-send -t 1000 -i audio-input-microphone "Voice Typer" "🔄 Toggled Listening"
 elif [ "$ACTION" == "ptt" ]; then

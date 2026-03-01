@@ -226,3 +226,7 @@ class SpeechProcessor(TranscriptionService):
 
 
 # Global instance removed in favor of Dependency Injection
+# Re-introduce module-level instance for backwards compatibility with
+# existing tests and code that import `speech_processor` directly from
+# this module. New code can still construct its own SpeechProcessor.
+speech_processor = SpeechProcessor()

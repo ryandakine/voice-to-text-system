@@ -40,3 +40,7 @@ Thumbs.db
 # Whisper models cache
 ~/.cache/whisper/
 tmp/
+build/
+dist/
+*.spec
+.pytest_cache/

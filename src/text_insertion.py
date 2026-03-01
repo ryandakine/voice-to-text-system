@@ -346,3 +346,8 @@ class TextInserter(OutputService):
 
 
 # Global instance removed in favor of Dependency Injection
+# Re-introduce module-level instance for backwards compatibility with
+# code and tests that import `text_inserter` from this module. New
+# code can still instantiate its own TextInserter when explicit
+# dependency injection is desired.
+text_inserter = TextInserter()

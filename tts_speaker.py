@@ -137,7 +137,20 @@ def _play_audio(audio_data: bytes) -> bool:
                 f.write(audio_data)
                 temp_path = f.name
             
-            # Try mpv first, then ffplay, then aplay
+            # Try mpg123 first (Best for Pi Aux Output)
+            # -a plughw:2,0 targets the specific card/device we verified
+            try:
+                subprocess.run(
+                    ["mpg123", "-a", "plughw:2,0", "-q", temp_path], 
+                    check=True, 
+                    timeout=30
+                )
+                os.unlink(temp_path)
+                return True
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                pass
+
+            # Fallbacks
             for player in [["mpv", "--no-video", "--really-quiet"], 
                           ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"],
                           ["aplay"]]:
@@ -149,7 +162,7 @@ def _play_audio(audio_data: bytes) -> bool:
                     continue
             
             os.unlink(temp_path)
-            logger.error("No audio player available (tried mpv, ffplay, aplay)")
+            logger.error("No audio player available (tried mpg123, mpv, ffplay, aplay)")
             return False
     
     except Exception as e:

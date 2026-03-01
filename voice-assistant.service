@@ -1,0 +1,16 @@
+[Unit]
+Description=Antigravity Voice Assistant
+After=network.target network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=audio
+WorkingDirectory=/home/audio/voice-assistant
+ExecStart=/home/audio/voice-assistant/venv/bin/python3 /home/audio/voice-assistant/voice_assistant.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/audio/voice-assistant/.env
+
+[Install]
+WantedBy=multi-user.target

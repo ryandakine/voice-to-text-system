@@ -243,3 +243,6 @@ class HotkeyHandler:
 
 
 # Global instance removed in favor of Dependency Injection
+# Re-introduce a module-level instance for backwards compatibility
+# with code and tests that import `hotkey_handler` from this module.
+hotkey_handler = HotkeyHandler()

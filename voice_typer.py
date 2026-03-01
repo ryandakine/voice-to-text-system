@@ -202,85 +202,75 @@ class VoiceTyper:
     # Deepgram connection management (v5.x SDK with context manager)
     # ------------------------------------------------------------------
 
-    def _run_streaming_loop(self) -> None:
-        """Main streaming loop using v5.x SDK context manager pattern."""
+    def _run_streaming_session(self) -> None:
+        """Run a single streaming session. Returns when paused or stopped."""
         backoff = 1.0
         max_backoff = 30.0
 
-        while not self._stop_event.is_set():
-            try:
-                logging.info("Connecting to Deepgram streaming (model=%s)...", self._model)
+        logging.info("Connecting to Deepgram streaming (model=%s)...", self._model)
+        
+        try:
+            with self._deepgram.listen.v1.connect(
+                model=self._model,
+                language="en-US",
+                smart_format=True,
+                punctuate=True,
+                dictation=True,
+                encoding="linear16",
+                channels=CHANNELS,
+                sample_rate=SAMPLE_RATE,
+                interim_results=True,
+                utterance_end_ms="1000",
+                vad_events=True,
+                endpointing=500,
+            ) as connection:
+                logging.info("Connected to Deepgram streaming!")
                 
-                with self._deepgram.listen.v1.connect(
-                    model=self._model,
-                    language="en-US",
-                    smart_format=True,
-                    punctuate=True,
-                    encoding="linear16",
-                    channels=CHANNELS,
-                    sample_rate=SAMPLE_RATE,
-                    interim_results=True,
-                    utterance_end_ms="1000",
-                    vad_events=True,
-                    endpointing=200,
-                ) as connection:
-                    logging.info("Connected to Deepgram streaming!")
-                    
-                    # Register event handlers
-                    connection.on(EventType.OPEN, self._on_open)
-                    connection.on(EventType.MESSAGE, self._on_message)
-                    connection.on(EventType.ERROR, self._on_error)
-                    connection.on(EventType.CLOSE, self._on_close)
-                    
-                    # Store connection reference for send_audio
-                    with self._dg_lock:
-                        self._dg_connection = connection
-                        self._connection_active = True
-                    
-                    # Start listening for events
-                    connection.start_listening()
-                    
-                    # Reset backoff on successful connection
-                    backoff = 1.0
-                    
-                    # Keep the connection alive - events handle messages
-                    while not self._stop_event.is_set() and self._connection_active:
-                        try:
-                            # Check for stale connection (many empty transcripts or long silence)
-                            time_since_success = time.time() - self._last_successful_transcript_time
-                            if self._empty_transcript_count > 10 and time_since_success > 30:
-                                logging.warning("Connection seems stale (%d empty transcripts, %.0fs since last success) - reconnecting",
-                                              self._empty_transcript_count, time_since_success)
-                                self._empty_transcript_count = 0
-                                break  # Exit loop to trigger reconnection
-                            
-                            # Send keepalive every 5 seconds
-                            try:
-                                connection.send_keepalive()
-                            except Exception:
-                                pass  # Ignore keepalive errors
-                            
-                            time.sleep(5.0)
-                        except Exception as e:
-                            if "closed" in str(e).lower():
-                                logging.warning("WebSocket closed")
-                                break
-                            logging.debug("error: %s", e)
-                    
-                    with self._dg_lock:
-                        self._connection_active = False
-                        self._dg_connection = None
+                # Register event handlers
+                connection.on(EventType.OPEN, self._on_open)
+                connection.on(EventType.MESSAGE, self._on_message)
+                connection.on(EventType.ERROR, self._on_error)
+                connection.on(EventType.CLOSE, self._on_close)
+                
+                with self._dg_lock:
+                    self._dg_connection = connection
+                    self._connection_active = True
+                
+                connection.start_listening()
+                
+                # Wait loop - exit if paused or stopped
+                while not self._stop_event.is_set():
+                    # Check if we should still be listening
+                    if not self._listening_flag.is_set():
+                        logging.info("Paused - closing connection.")
+                        break
 
-            except Exception as exc:
-                logging.error("Failed to connect to Deepgram: %s", exc)
+                    # Check connection health
+                    if not self._connection_active:
+                         logging.warning("Connection lost unexpectedly.")
+                         break
+
+                    # Check for stale connection
+                    time_since_success = time.time() - self._last_successful_transcript_time
+                    if self._empty_transcript_count > 10 and time_since_success > 30:
+                        logging.warning("Connection stale - reconnecting...")
+                        break
+                    
+                    try:
+                        connection.send_keepalive()
+                    except: pass
+                    
+                    time.sleep(0.5)
+                
+                # Cleanup connection for this session
                 with self._dg_lock:
                     self._connection_active = False
                     self._dg_connection = None
-                
-                if not self._stop_event.is_set():
-                    logging.info("Retrying in %.1f seconds...", backoff)
-                    time.sleep(backoff)
-                    backoff = min(backoff * 2, max_backoff)
+
+        except Exception as exc:
+            logging.error("Deepgram connection error: %s", exc)
+            if not self._stop_event.is_set() and self._listening_flag.is_set():
+                time.sleep(backoff) # Simple backoff if error occurred
 
     def _on_open(self, *args, **kwargs):
         """Called when WebSocket opens."""
@@ -508,9 +498,15 @@ class VoiceTyper:
         # Start hotkey listener
         # No internal hotkey listener - relying on external signals
 
-        # Run the streaming loop (blocking, with reconnection)
+        # Main loop
         try:
-            self._run_streaming_loop()
+            while not self._stop_event.is_set():
+                if self._listening_flag.is_set():
+                    # We are ON - run a streaming session
+                    self._run_streaming_session()
+                else:
+                    # We are OFF - wait for signal
+                    time.sleep(0.2)
         except KeyboardInterrupt:
             logging.info("KeyboardInterrupt received, shutting down...")
         finally:

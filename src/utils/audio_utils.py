@@ -233,3 +233,8 @@ class AudioManager:
 
 
 # Global instance removed in favor of Dependency Injection
+# Re-introduce a shared global instance for backwards compatibility
+# with existing tests and modules that import `audio_manager` from
+# this module. New code can still prefer explicit dependency
+# injection by constructing its own `AudioManager`.
+audio_manager = AudioManager()
