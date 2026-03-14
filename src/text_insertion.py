@@ -61,7 +61,7 @@ class TextInserter(OutputService):
             f"TextInserter initialized (primary={self.primary_method} fallback={self.fallback_method} keyboard_interval={self.keyboard_interval:.3f})"
         )
     
-    def insert_text(self, text: str) -> bool:
+    def insert_text(self, text: str, window_id: Optional[str] = None) -> bool:
         """Insert text using the configured method."""
         if not text or not text.strip():
             logger.warning("Attempted to insert empty text")
@@ -69,11 +69,11 @@ class TextInserter(OutputService):
         
         try:
             # Try primary method first
-            if self._insert_with_method(text, self.primary_method):
+            if self._insert_with_method(text, self.primary_method, window_id=window_id):
                 return True
             
             # Fall back to secondary method
-            if self._insert_with_method(text, self.fallback_method):
+            if self._insert_with_method(text, self.fallback_method, window_id=window_id):
                 return True
             
             logger.error("All text insertion methods failed")
@@ -83,11 +83,11 @@ class TextInserter(OutputService):
             logger.error(f"Text insertion failed: {e}")
             return False
     
-    def _insert_with_method(self, text: str, method: str) -> bool:
+    def _insert_with_method(self, text: str, method: str, window_id: Optional[str] = None) -> bool:
         """Insert text using a specific method."""
         try:
             if method == 'clipboard':
-                return self._insert_via_clipboard(text)
+                return self._insert_via_clipboard(text, window_id=window_id)
             elif method == 'keyboard':
                 return self._insert_via_keyboard(text)
             elif method == 'xdotool':
@@ -114,6 +114,19 @@ class TextInserter(OutputService):
         except Exception:
             return None
 
+    def _get_active_window_id(self) -> Optional[str]:
+        """Return the current active X11 window ID, or None if unavailable."""
+        try:
+            result = subprocess.run(
+                ['xdotool', 'getactivewindow'],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip() or None
+        except Exception:
+            return None
+
     def _get_paste_hotkey(self) -> List[str]:
         """Choose the paste hotkey sequence based on the active application."""
         window_class = self._get_active_window_class()
@@ -121,13 +134,36 @@ class TextInserter(OutputService):
             return ['ctrl', 'shift', 'v']
         return ['ctrl', 'v']
 
-    def _paste_hotkey(self, hotkey: List[str]) -> None:
+    def _paste_hotkey(self, hotkey: List[str], window_id: Optional[str] = None) -> None:
         """Paste using a hotkey.
 
         Prefer xdotool when available because it's generally more reliable for X11 automation
         and supports clearing stuck modifiers.
+
+        When window_id is provided the target window is explicitly focused before pasting.
+        This handles two common problems that occur during push-to-talk (Alt key) usage:
+          1. A different window may have stolen focus during the transcription delay.
+          2. GTK/Electron apps activate their menu bar on Alt-release; the menu bar
+             widget then holds keyboard focus inside the same window so a plain
+             windowfocus call is not enough – we also send Escape to dismiss it.
+             Terminals are excluded because Escape has special meaning there.
         """
         if shutil.which('xdotool'):
+            if window_id:
+                subprocess.run(
+                    ['xdotool', 'windowfocus', '--sync', window_id],
+                    capture_output=True,
+                )
+                time.sleep(0.05)
+
+            is_terminal = hotkey == ['ctrl', 'shift', 'v']
+            if not is_terminal:
+                subprocess.run(
+                    ['xdotool', 'key', '--clearmodifiers', 'Escape'],
+                    capture_output=True,
+                )
+                time.sleep(0.05)
+
             key_combo = '+'.join(hotkey)
             subprocess.run(['xdotool', 'key', '--clearmodifiers', key_combo], check=True)
             return
@@ -135,9 +171,16 @@ class TextInserter(OutputService):
         # Fallback to pyautogui
         pyautogui.hotkey(*hotkey)
 
-    def _insert_via_clipboard(self, text: str) -> bool:
+    def _insert_via_clipboard(self, text: str, window_id: Optional[str] = None) -> bool:
         """Insert text using clipboard method."""
         try:
+            # Use the caller-supplied window ID (captured at Alt-release time) when
+            # available.  Fall back to a fresh query only when no ID was provided
+            # (e.g. hotkey-toggle mode or direct API calls).
+            target_window_id: Optional[str] = window_id
+            if target_window_id is None and shutil.which('xdotool'):
+                target_window_id = self._get_active_window_id()
+
             # Store original clipboard content
             try:
                 self.original_clipboard = pyperclip.paste()
@@ -172,8 +215,8 @@ class TextInserter(OutputService):
 
             # Paste using an app-appropriate hotkey (e.g. terminals often use Ctrl+Shift+V)
             hotkey = self._get_paste_hotkey()
-            logger.debug("Pasting using hotkey=%s", hotkey)
-            self._paste_hotkey(hotkey)
+            logger.debug(f"Pasting using hotkey={hotkey} window_id={target_window_id}")
+            self._paste_hotkey(hotkey, window_id=target_window_id)
 
             # Wait for paste to complete
             time.sleep(0.2)

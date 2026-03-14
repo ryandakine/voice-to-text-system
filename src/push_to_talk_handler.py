@@ -3,6 +3,8 @@ Push-to-talk handler for voice recording using Alt key.
 Hold Alt to record, release to stop and transcribe.
 """
 
+import shutil
+import subprocess
 import threading
 import time
 from typing import Optional, Callable
@@ -23,7 +25,8 @@ class PushToTalkHandler:
         self.on_stop_recording_callback = None
         self.alt_pressed = False
         self.recording_thread = None
-        
+        self.last_active_window_id: Optional[str] = None
+
         # Use either left or right Alt key
         self.trigger_keys = {keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt}
         
@@ -98,13 +101,32 @@ class PushToTalkHandler:
         except Exception as e:
             logger.error(f"Error in key press handler: {e}")
     
+    def _capture_active_window_id(self) -> Optional[str]:
+        """Return the X11 active window ID right now, or None if unavailable."""
+        if not shutil.which('xdotool'):
+            return None
+        try:
+            result = subprocess.run(
+                ['xdotool', 'getactivewindow'],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip() or None
+        except Exception:
+            return None
+
     def _on_key_release(self, key):
         """Handle key release events."""
         try:
             # Check if Alt key was released
             if key in self.trigger_keys and self.alt_pressed:
                 self.alt_pressed = False
-                
+
+                # Snapshot the focused window NOW – before the X server delivers the
+                # Alt-release event to the target app (which may activate a menu bar).
+                self.last_active_window_id = self._capture_active_window_id()
+
                 # Stop recording if currently recording
                 if self.is_recording:
                     self._stop_recording()
@@ -154,11 +176,13 @@ class PushToTalkHandler:
             logger.info("Alt key released - stopping recording and transcribing")
             logger.log_hotkey_event("Alt", "RELEASED - Recording stopped")
             
-            # Call the stop recording callback
+            # Call the stop recording callback, forwarding the window ID that was
+            # active when Alt was released so the inserter can restore focus later.
             if self.on_stop_recording_callback:
-                # Run in a separate thread to avoid blocking keyboard listener
+                window_id = self.last_active_window_id
                 threading.Thread(
                     target=self.on_stop_recording_callback,
+                    kwargs={'window_id': window_id},
                     daemon=True
                 ).start()
             else:

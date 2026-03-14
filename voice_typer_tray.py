@@ -1,76 +1,155 @@
 #!/usr/bin/env python3
-import time
+"""System tray indicator for VoiceTyper.
+
+Shows an icon in the system tray (toolbar) with toggle functionality.
+Right-click for menu, left-click to toggle.
+"""
+
 import os
 import signal
-import subprocess
-import threading
-from PIL import Image, ImageDraw
-import pystray
-from pystray import MenuItem as item
+import sys
+from threading import Thread
+import time
 
-# Configuration
-STATUS_FILE = "/tmp/voice_typer_status"
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONTROL_SCRIPT = os.path.join(SCRIPT_DIR, "control-voice-typer.sh")
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+except ImportError:
+    print("Installing required packages...")
+    import subprocess
+    subprocess.run([sys.executable, "-m", "pip", "install", "pystray", "pillow", "-q"])
+    import pystray
+    from PIL import Image, ImageDraw
 
-# Global icon reference
-icon = None
-current_state = "OFF"
+# Global state
+current_status = "ON"
 
-def create_image(color):
-    """Create a 64x64 circle icon of the given color."""
-    width = 64
-    height = 64
-    image = Image.new('RGB', (width, height), (0, 0, 0, 0)) # Transparent logic handled by tray
-    # Actually pystray handles transparency if RGBA
-    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-    dc = ImageDraw.Draw(image)
-    dc.ellipse((8, 8, 56, 56), fill=color)
-    return image
-
-def get_state():
-    """Read the status file."""
+def get_voice_typer_pid():
+    """Get the PID of running voice_typer.py."""
+    lock_file = "/tmp/voice_typer.pid"
+    if os.path.exists(lock_file):
+        try:
+            with open(lock_file, "r") as f:
+                return int(f.read().strip())
+        except:
+            pass
+    
     try:
-        if os.path.exists(STATUS_FILE):
-            with open(STATUS_FILE, "r") as f:
-                return f.read().strip()
+        import subprocess
+        result = subprocess.run(
+            ["pgrep", "-f", "python.*voice_typer.py"],
+            capture_output=True,
+            text=True
+        )
+        pids = [p for p in result.stdout.strip().split("\n") if p]
+        if pids:
+            return int(pids[0])
     except:
         pass
-    return "OFF"
+    return None
 
-def on_clicked(icon, item):
-    """Toggle listening when clicked."""
-    subprocess.Popen([CONTROL_SCRIPT, "toggle"])
-    # Icon update happens in loop
+def get_status():
+    """Get current listening status."""
+    global current_status
+    try:
+        with open("/tmp/voice_typer_status", "r") as f:
+            current_status = f.read().strip()
+            return current_status
+    except:
+        return current_status
+
+def toggle_listening():
+    """Toggle listening state via SIGUSR1."""
+    pid = get_voice_typer_pid()
+    if pid:
+        try:
+            os.kill(pid, signal.SIGUSR1)
+        except Exception as e:
+            print(f"Error toggling: {e}")
+
+def create_icon(status):
+    """Create a simple colored circle icon."""
+    width = 64
+    height = 64
     
-def monitor_loop(icon):
-    """Poll status file and update icon."""
-    global current_state
-    icon.visible = True
-    while icon.visible:
-        new_state = get_state()
-        if new_state != current_state:
-            current_state = new_state
-            if current_state == "ON":
-                icon.icon = create_image("green")
-                icon.title = "Voice Typer: LISTENING"
-            else:
-                icon.icon = create_image("red")
-                icon.title = "Voice Typer: PAUSED"
-        time.sleep(0.5)
+    # Green for ON, Red for OFF
+    color = "#4CAF50" if status == "ON" else "#F44336"
+    
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    
+    # Draw filled circle
+    margin = 4
+    draw.ellipse([margin, margin, width-margin, height-margin], fill=color)
+    
+    # Add mic symbol (simple circle)
+    inner = 20
+    draw.ellipse([width//2-inner//2, height//2-inner//2, 
+                  width//2+inner//2, height//2+inner//2], 
+                 fill="white" if status == "ON" else "#333")
+    
+    return image
 
-def on_quit(icon, item):
-    icon.stop()
+def setup_tray_icon():
+    """Setup and run the system tray icon."""
+    status = get_status()
+    
+    # Create menu
+    def on_toggle(icon, item):
+        toggle_listening()
+        update_icon(icon)
+    
+    def on_exit(icon, item):
+        icon.stop()
+        sys.exit(0)
+    
+    menu = pystray.Menu(
+        pystray.MenuItem("Toggle Listening", on_toggle),
+        pystray.MenuItem("Exit", on_exit)
+    )
+    
+    # Create icon
+    icon = pystray.Icon(
+        "voice_typer",
+        create_icon(status),
+        f"VoiceTyper (Listening: {status})",
+        menu
+    )
+    
+    # Left click handler
+    def on_clicked(icon):
+        toggle_listening()
+        update_icon(icon)
+    
+    icon.on_click = on_clicked
+    
+    # Start status updater thread
+    def update_loop():
+        last_status = None
+        while True:
+            time.sleep(0.5)
+            new_status = get_status()
+            if new_status != last_status:
+                last_status = new_status
+                update_icon(icon)
+    
+    Thread(target=update_loop, daemon=True).start()
+    
+    icon.run()
 
-# Initial setup
-image = create_image("red")
-menu = pystray.Menu(
-    item('Toggle', on_clicked, default=True),
-    item('Quit Tray', on_quit)
-)
+def update_icon(icon):
+    """Update the icon based on current status."""
+    status = get_status()
+    icon.icon = create_icon(status)
+    icon.title = f"VoiceTyper (Listening: {status})"
 
-icon = pystray.Icon("voice_typer", image, "Voice Typer: Initializing...", menu)
-# Run the monitor in the background thread provided by pystray's setup if needed, 
-# or just run our own thread. Pystray 'run' blocks.
-# We'll use 'setup' callback to start our monitor thread
-icon.run(setup=monitor_loop)
+def main():
+    # Check if voice_typer is running
+    pid = get_voice_typer_pid()
+    if not pid:
+        print("Warning: voice_typer.py is not running. Start it first.")
+    
+    setup_tray_icon()
+
+if __name__ == "__main__":
+    main()

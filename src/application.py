@@ -2,7 +2,7 @@ import threading
 import time
 import signal
 import sys
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 from .interfaces import TranscriptionService, OutputService
 from .input_strategy import InputStrategy, HotkeyInputStrategy, PTTInputStrategy
 from .utils.audio_utils import AudioManager
@@ -83,7 +83,7 @@ class VoiceToTextApp:
             sample_rate=self.sample_rate
         )
 
-    def stop_recording(self):
+    def stop_recording(self, window_id: Optional[str] = None):
         """Handle stop recording event."""
         logger.info("Stopping recording...")
         audio_file = self.audio_manager.stop_recording()
@@ -93,13 +93,14 @@ class VoiceToTextApp:
             processing_thread = threading.Thread(
                 target=self._process_audio,
                 args=(audio_file,),
+                kwargs={'window_id': window_id},
                 daemon=True
             )
             processing_thread.start()
         else:
             logger.warning("No audio file captured.")
 
-    def _process_audio(self, audio_file: str):
+    def _process_audio(self, audio_file: str, window_id: Optional[str] = None):
         """Transcribe and insert text."""
         self.processing = True
         try:
@@ -108,7 +109,7 @@ class VoiceToTextApp:
             
             if text:
                 logger.info(f"Transcribed: '{text}'")
-                success = self.output_service.insert_text(text)
+                success = self.output_service.insert_text(text, window_id=window_id)
                 if success:
                     logger.info("Text inserted successfully.")
                 else:

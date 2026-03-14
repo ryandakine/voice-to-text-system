@@ -37,6 +37,7 @@ import sys
 import threading
 import time
 from typing import Optional
+from pynput import keyboard
 
 import pyaudio
 from dotenv import load_dotenv
@@ -155,6 +156,7 @@ class VoiceTyper:
 
         self._stop_event = threading.Event()
         self._listening_flag = threading.Event()
+        self._listening_flag.set()  # Auto-start listening
         self._mic = MicrophoneStreamer(self._send_audio, self._should_stream_audio, self._stop_event)
         self._ptt_active = False  # Initialize PTT state before signals
 
@@ -174,6 +176,9 @@ class VoiceTyper:
         self._last_transcript = ""
         self._last_transcript_time = 0
         
+        # Buffer for streaming typing (interim results)
+        self._current_utterance_typed = ""
+        
         # Track empty transcripts to detect stale connection
         self._empty_transcript_count = 0
         self._last_successful_transcript_time = time.time()
@@ -181,6 +186,14 @@ class VoiceTyper:
         # OpenClaw AI mode (F9 toggles)
         self._openclaw_mode = False
         self._openclaw_speaking = False
+        
+        # Keyboard listener for Alt PTT
+        self._alt_keys = {keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt}
+        self._alt_pressed = False
+        self._keyboard_listener = keyboard.Listener(
+            on_press=self._on_key_press,
+            on_release=self._on_key_release
+        )
         
         # Initial status write
         self._update_status_file()
@@ -198,6 +211,25 @@ class VoiceTyper:
         """Return True if we should be streaming audio (Toggle ON or PTT held)."""
         return self._listening_flag.is_set() or self._ptt_active
 
+    def _on_key_press(self, key):
+        if key in self._alt_keys and not self._alt_pressed:
+            self._alt_pressed = True
+            self._ptt_active = True
+            logging.info("Alt key pressed - PTT ACTIVE")
+            return False  # Suppress Alt key to prevent focus shift
+        return True
+
+    def _on_key_release(self, key):
+        if key in self._alt_keys and self._alt_pressed:
+            self._alt_pressed = False
+            self._ptt_active = False
+            # Reset transcript buffer when PTT releases
+            with self._typing_lock:
+                self._current_utterance_typed = ""
+            logging.info("Alt key released - PTT RELEASED")
+            return False  # Suppress Alt key to prevent focus shift
+        return True
+
     # ------------------------------------------------------------------
     # Deepgram connection management (v5.x SDK with context manager)
     # ------------------------------------------------------------------
@@ -213,16 +245,16 @@ class VoiceTyper:
             with self._deepgram.listen.v1.connect(
                 model=self._model,
                 language="en-US",
-                smart_format=True,
-                punctuate=True,
-                dictation=True,
+                smart_format="true",
+                punctuate="true",
+                dictation="true",
                 encoding="linear16",
-                channels=CHANNELS,
-                sample_rate=SAMPLE_RATE,
-                interim_results=True,
+                channels=str(CHANNELS),
+                sample_rate=str(SAMPLE_RATE),
+                interim_results="true",
                 utterance_end_ms="1000",
-                vad_events=True,
-                endpointing=500,
+                vad_events="true",
+                endpointing="500",
             ) as connection:
                 logging.info("Connected to Deepgram streaming!")
                 
@@ -240,8 +272,8 @@ class VoiceTyper:
                 
                 # Wait loop - exit if paused or stopped
                 while not self._stop_event.is_set():
-                    # Check if we should still be listening
-                    if not self._listening_flag.is_set():
+                    # Check if we should still be listening (toggle OR PTT)
+                    if not self._listening_flag.is_set() and not self._ptt_active:
                         logging.info("Paused - closing connection.")
                         break
 
@@ -283,65 +315,60 @@ class VoiceTyper:
     def _handle_message(self, message):
         """Process a message from Deepgram."""
         try:
-            # Handle UtteranceEnd - reset state for next utterance
-            msg_type = getattr(message, 'type', '')
-            if msg_type == 'UtteranceEnd' or (hasattr(message, '__class__') and 'UtteranceEnd' in message.__class__.__name__):
-                logging.debug("UtteranceEnd received - ready for next utterance")
-                self._empty_transcript_count = 0  # Reset on utterance boundary
-                return
-            
             # Handle transcript messages
             if hasattr(message, 'channel') and hasattr(message.channel, 'alternatives'):
                 alternatives = message.channel.alternatives
                 if alternatives and len(alternatives) > 0:
                     transcript = alternatives[0].transcript
                     if transcript and transcript.strip():
-                        # Process both is_final AND speech_final transcripts
-                        # is_final = end of a phrase, speech_final = end of utterance (after pause)
-                        is_final = getattr(message, 'is_final', False)
                         speech_final = getattr(message, 'speech_final', False)
+                        is_final = getattr(message, 'is_final', False)
+                        clean_transcript = transcript.strip()
                         
-                        if is_final or speech_final:
-                            clean_transcript = transcript.strip()
-                            current_time = time.time()
-                            
-                            # Track successful transcripts
-                            self._last_successful_transcript_time = current_time
-                            self._empty_transcript_count = 0
-                            
-                            # Thread-safe deduplication
+                        # Only type FINAL results (not interim) to avoid duplicates
+                        if speech_final or is_final:
                             with self._typing_lock:
-                                # Skip if same transcript within 3 seconds
-                                if (clean_transcript.lower() == self._last_transcript.lower() and 
-                                    current_time - self._last_transcript_time < 3.0):
-                                    logging.debug("Duplicate ignored: %s", clean_transcript)
-                                    return
-                                
-                                self._last_transcript = clean_transcript
-                                self._last_transcript_time = current_time
-                                
-                                # Route based on mode
-                                if self._openclaw_mode:
-                                    logging.info("🦞 OpenClaw: %s", clean_transcript)
-                                    threading.Thread(
-                                        target=self._handle_openclaw_query,
-                                        args=(clean_transcript,),
-                                        daemon=True
-                                    ).start()
-                                else:
-                                    logging.info("Typing: %s", clean_transcript)
-                                    self._type_text(clean_transcript + " ")
-            # Track empty final transcripts (sign of stale connection)
-            if hasattr(message, 'channel') and hasattr(message.channel, 'alternatives'):
-                is_final = getattr(message, 'is_final', False)
-                if is_final:
-                    alternatives = message.channel.alternatives
-                    if not alternatives or not alternatives[0].transcript.strip():
-                        self._empty_transcript_count += 1
-                        if self._empty_transcript_count % 5 == 0:
-                            logging.debug("Empty transcript count: %d", self._empty_transcript_count)
+                                # Skip if same as last typed
+                                if clean_transcript.lower() != self._last_transcript.lower():
+                                    self._last_transcript = clean_transcript
+                                    text_to_type = clean_transcript + " "
+                                    if not self._openclaw_mode:
+                                        logging.info("Typing: %s", clean_transcript)
+                                        self._type_text(text_to_type)
         except Exception as exc:
-            logging.debug("Error processing message: %s", exc)
+            logging.error("Error processing message: %s", exc)
+    
+    def _type_transcript(self, text_to_type: str, full_transcript: str, current_time: float, interim: bool = False):
+        """Type transcript text, handling deduplication and routing."""
+        if not text_to_type:
+            return
+            
+        # Check for duplicates against last final transcript
+        if (full_transcript.lower() == self._last_transcript.lower() and 
+            current_time - self._last_transcript_time < 3.0):
+            logging.debug("Duplicate ignored: %s", full_transcript)
+            return
+        
+        # Update last transcript tracking for final results
+        if not interim:
+            self._last_transcript = full_transcript
+            self._last_transcript_time = current_time
+        
+        # Route based on mode
+        if self._openclaw_mode:
+            if not interim:  # Only send final to OpenClaw
+                logging.info("🦞 OpenClaw: %s", full_transcript)
+                threading.Thread(
+                    target=self._handle_openclaw_query,
+                    args=(full_transcript,),
+                    daemon=True
+                ).start()
+        else:
+            if interim:
+                logging.debug("Typing interim: '%s'", text_to_type)
+            else:
+                logging.info("Typing: %s", full_transcript)
+            self._type_text(text_to_type)
     
     def _handle_openclaw_query(self, user_text: str):
         """Handle a query via OpenClaw (GLM-5)."""
@@ -490,23 +517,23 @@ class VoiceTyper:
 
     def run(self) -> None:
         logging.info("Starting VoiceTyper (Deepgram model=%s)", self._model)
-        logging.info("Press F8 to toggle listening on/off. Ctrl+C to exit.")
+        logging.info("Press F8 to toggle listening on/off. Alt for Push-to-Talk. Ctrl+C to exit.")
 
         # Start microphone capture
         self._mic.start()
 
         # Start hotkey listener
-        # No internal hotkey listener - relying on external signals
+        self._keyboard_listener.start()
 
         # Main loop
         try:
             while not self._stop_event.is_set():
-                if self._listening_flag.is_set():
-                    # We are ON - run a streaming session
+                if self._listening_flag.is_set() or self._ptt_active:
+                    # We are ON or PTT held - run a streaming session
                     self._run_streaming_session()
                 else:
                     # We are OFF - wait for signal
-                    time.sleep(0.2)
+                    time.sleep(0.1)
         except KeyboardInterrupt:
             logging.info("KeyboardInterrupt received, shutting down...")
         finally:
@@ -575,10 +602,13 @@ def enforce_singleton():
 
 def main() -> None:
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="[%(asctime)s] %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    # Suppress overly verbose SDK debug logs
+    for logger_name in ["deepgram", "deepgram.clients.listen", "websocket", "urllib3", "asyncio"]:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
     
     enforce_singleton()
 
