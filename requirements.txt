@@ -23,6 +23,12 @@ requests>=2.31.0
 configparser>=5.3.0
 pyinstaller>=6.4.0
 
-# Deepgram integration
+# Granite 4.0 local STT
+transformers>=4.52.1
+torchaudio>=2.0.0
+accelerate>=0.27.0
+peft>=0.10.0
+
+# Deepgram integration (kept for TTS/OpenClaw only)
 deepgram-sdk>=3.0.0
 python-dotenv>=1.0.0

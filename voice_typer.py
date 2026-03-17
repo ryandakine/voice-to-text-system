@@ -1,33 +1,31 @@
 #!/usr/bin/env python3
-"""Simple Deepgram-powered voice-to-text "voice typer".
+"""IBM Granite 4.0 1B Speech powered voice-to-text typer.
+
+Fully local, offline, no API key required.
 
 Features
 --------
-- Streams microphone audio to Deepgram Nova-2 over WebSocket using deepgram-sdk v5.x.
-- Uses PyAudio for microphone capture (16 kHz mono, linear16).
-- On finalized transcripts, types the text into the currently focused window via pynput.
-- F8 hotkey toggles "Always Listening" mode (VAD).
-- Alt (Left or Right) works as Push-to-Talk (PTT), overriding the toggle.
-- Starts in PAUSED mode by default for safety.
-- Reads DEEPGRAM_API_KEY from a .env file (via python-dotenv) or environment.
-- Attempts to gracefully handle connection drops with automatic reconnection.
+- Records microphone audio locally (16 kHz mono, linear16).
+- Uses RMS-based VAD to detect speech start/end.
+- On utterance end, transcribes with IBM Granite 4.0 1B Speech locally.
+- Types transcript into focused window via xdotool.
+- F8 hotkey toggles always-listening mode.
+- Alt (Left or Right) = Push-to-Talk.
+- Starts in PAUSED mode by default.
+- SIGUSR1 toggles listening. SIGUSR2 toggles PTT. SIGRTMIN toggles OpenClaw.
 
 Usage
 -----
-1. Create a .env file next to this script with:
-
-   DEEPGRAM_API_KEY=your_api_key_here
-
-2. Install dependencies (from repo root):
-
+1. Install deps:
    pip install -r requirements.txt
 
-3. Run:
-
+2. Run:
    python voice_typer.py
 
-4. Make sure the window where you want text to appear is focused, then speak.
-   Press F8 to toggle listening on/off. Ctrl+C in the terminal to exit.
+3. Press F8 to start listening, speak, and text appears in your focused window.
+   Hold Alt for Push-to-Talk. Ctrl+C to exit.
+
+Model: ibm-granite/granite-4.0-1b-speech (~2 GB download on first run, cached after)
 """
 
 import json
@@ -37,53 +35,166 @@ import sys
 import threading
 import time
 from typing import Optional
+
+import numpy as np
+import pyaudio
+import psutil
+import signal
+import atexit
 from pynput import keyboard
 
-import pyaudio
-from dotenv import load_dotenv
-import signal
-import psutil
-import atexit
 
-# Load .env BEFORE importing deepgram SDK (it reads env vars at initialization)
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_env_path = os.path.join(_script_dir, ".env")
-load_dotenv(_env_path)
-
-from deepgram import DeepgramClient
-from deepgram.core.events import EventType
-
-
-# Audio settings compatible with Deepgram real-time streaming
+# ---------------------------------------------------------------------------
+# Audio settings
+# ---------------------------------------------------------------------------
 SAMPLE_RATE = 16000
 CHANNELS = 1
 FORMAT = pyaudio.paInt16
-CHUNK_SIZE = 1024  # frames per buffer (64ms at 16kHz) - balance of latency and stability
+CHUNK_SIZE = 1024  # ~64 ms per chunk at 16 kHz
 
+# VAD thresholds (RMS of int16 audio, range 0–32768)
+SPEECH_THRESHOLD = 500   # RMS above this → speech detected
+SILENCE_THRESHOLD = 300  # RMS below this → silence
+SILENCE_CHUNKS = 7       # ~448 ms of silence → utterance ended
+MIN_SPEECH_CHUNKS = 3    # skip if fewer than ~192 ms of speech
+MAX_BUFFER_CHUNKS = int(30 * SAMPLE_RATE / CHUNK_SIZE)  # 30-second hard cap
+
+
+# ---------------------------------------------------------------------------
+# Granite transcriber
+# ---------------------------------------------------------------------------
+
+class GraniteTranscriber:
+    """Loads IBM Granite 4.0 1B Speech and transcribes raw PCM audio."""
+
+    MODEL_ID = "ibm-granite/granite-4.0-1b-speech"
+
+    def __init__(self):
+        self._model = None
+        self._processor = None
+        self._tokenizer = None
+        self._device = None
+        self._lock = threading.Lock()
+        self._loaded = threading.Event()
+        threading.Thread(target=self._load, daemon=True, name="granite-loader").start()
+
+    def _load(self):
+        try:
+            import torch
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
+            logging.info(
+                "Loading Granite 4.0 1B Speech on %s "
+                "(first run downloads ~2 GB, cached after)...",
+                self._device,
+            )
+
+            self._processor = AutoProcessor.from_pretrained(self.MODEL_ID)
+            self._tokenizer = self._processor.tokenizer
+            self._model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self.MODEL_ID,
+                device_map=self._device,
+                torch_dtype=torch.bfloat16,
+            )
+            self._model.eval()
+
+            # Compile model for faster repeated inference (PyTorch 2.x)
+            try:
+                self._model = torch.compile(self._model, mode="reduce-overhead")
+                logging.info("torch.compile applied.")
+            except Exception:
+                pass  # compile is optional, not available on all setups
+
+            # Pre-warm: run one dummy inference so the first real transcription is fast
+            self._prewarm(torch)
+
+            self._loaded.set()
+            logging.info("Granite 4.0 model ready.")
+
+        except Exception as exc:
+            logging.error("Failed to load Granite model: %s", exc)
+
+    def _prewarm(self, torch):
+        """Run a silent dummy inference to warm up the GPU/CUDA kernels."""
+        try:
+            dummy_audio = torch.zeros(1, SAMPLE_RATE, dtype=torch.float32)  # 1s silence
+            chat = [{"role": "user", "content": "<|audio|>can you transcribe the speech?"}]
+            prompt = self._tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+            inputs = self._processor(prompt, dummy_audio, device=self._device, return_tensors="pt").to(self._device)
+            with torch.no_grad():
+                self._model.generate(**inputs, max_new_tokens=5)
+            logging.info("Model pre-warmed.")
+        except Exception as exc:
+            logging.warning("Pre-warm failed (non-fatal): %s", exc)
+
+    def wait_until_ready(self, timeout: float = 180) -> bool:
+        return self._loaded.wait(timeout=timeout)
+
+    def transcribe(self, audio_bytes: bytes) -> Optional[str]:
+        """Transcribe raw int16 PCM bytes captured at 16 kHz mono."""
+        if not self._loaded.is_set():
+            logging.warning("Granite model not ready, dropping utterance.")
+            return None
+
+        import torch
+
+        # int16 PCM → float32 normalized to [-1, 1]
+        audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        if audio_np.size == 0:
+            return None
+
+        # Shape expected by processor: [channels, samples]
+        wav = torch.tensor(audio_np).unsqueeze(0)
+
+        chat = [{"role": "user", "content": "<|audio|>can you transcribe the speech?"}]
+        prompt = self._tokenizer.apply_chat_template(
+            chat, tokenize=False, add_generation_prompt=True
+        )
+
+        try:
+            with self._lock:
+                inputs = self._processor(
+                    prompt, wav, device=self._device, return_tensors="pt"
+                ).to(self._device)
+
+                with torch.no_grad():
+                    outputs = self._model.generate(**inputs, max_new_tokens=200)
+
+                n = inputs["input_ids"].shape[-1]
+                decoded = self._tokenizer.batch_decode(
+                    outputs[0, n:].unsqueeze(0), skip_special_tokens=True
+                )
+
+            text = decoded[0].strip() if decoded else ""
+            return text if text else None
+
+        except Exception as exc:
+            logging.error("Transcription error: %s", exc)
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Microphone streamer (fills a queue with raw PCM chunks)
+# ---------------------------------------------------------------------------
 
 class MicrophoneStreamer:
-    """Background thread that streams microphone audio via a callback.
+    """Background thread that reads microphone audio and calls a callback."""
 
-    The callback is responsible for sending bytes to Deepgram.
-    """
-
-    def __init__(self, send_audio_callback, should_send_callback, stop_event: threading.Event):
-        self._send_audio_callback = send_audio_callback
-        self._should_send_callback = should_send_callback
+    def __init__(self, chunk_callback, stop_event: threading.Event):
+        self._chunk_callback = chunk_callback
         self._stop_event = stop_event
-
         self._pa = None
         self._stream = None
         self._thread = None
 
-    def start(self) -> None:
+    def start(self):
         if self._thread and self._thread.is_alive():
             return
-
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread = threading.Thread(target=self._run, daemon=True, name="mic-streamer")
         self._thread.start()
 
-    def _run(self) -> None:
+    def _run(self):
         self._pa = pyaudio.PyAudio()
         try:
             self._stream = self._pa.open(
@@ -93,7 +204,7 @@ class MicrophoneStreamer:
                 input=True,
                 frames_per_buffer=CHUNK_SIZE,
             )
-        except Exception as exc:  # pragma: no cover - hardware dependent
+        except Exception as exc:
             logging.error("Failed to open microphone: %s", exc)
             self._cleanup()
             return
@@ -103,518 +214,399 @@ class MicrophoneStreamer:
         while not self._stop_event.is_set():
             try:
                 data = self._stream.read(CHUNK_SIZE, exception_on_overflow=False)
-            except Exception as exc:  # pragma: no cover - hardware dependent
-                logging.warning("Error reading from microphone: %s", exc)
-                time.sleep(0.1)
+            except Exception as exc:
+                logging.warning("Mic read error: %s", exc)
+                time.sleep(0.05)
                 continue
+            self._chunk_callback(data)
 
-            # Only send audio when listening is enabled (Toggle ON or PTT held)
-            if self._should_send_callback():
-                try:
-                    self._send_audio_callback(data)
-                except Exception as exc:  # pragma: no cover - network dependent
-                    logging.warning("Error sending audio to Deepgram: %s", exc)
-                    # Let the connection manager handle reconnection.
-
-        logging.info("Microphone loop stopping")
         self._cleanup()
 
-    def _cleanup(self) -> None:
+    def _cleanup(self):
         try:
-            if self._stream is not None:
+            if self._stream:
                 self._stream.stop_stream()
                 self._stream.close()
         finally:
             self._stream = None
-
         try:
-            if self._pa is not None:
+            if self._pa:
                 self._pa.terminate()
         finally:
             self._pa = None
 
-    def stop(self) -> None:
+    def stop(self):
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
 
 
+# ---------------------------------------------------------------------------
+# Main VoiceTyper
+# ---------------------------------------------------------------------------
+
 class VoiceTyper:
-    """Manages Deepgram connection, microphone streaming, and keystroke typing."""
+    """Manages mic capture, VAD, Granite transcription, and keystroke typing."""
 
-    def __init__(self, model: str = "nova-2") -> None:
-        api_key = os.getenv("DEEPGRAM_API_KEY")
-        if not api_key:
-            logging.error("DEEPGRAM_API_KEY is not set. Create a .env file with your key.")
-            sys.exit(1)
-
-        self._deepgram = DeepgramClient()
-
-        self._model = model
-        self._dg_connection = None
-        self._dg_lock = threading.Lock()
+    def __init__(self):
+        self._transcriber = GraniteTranscriber()
 
         self._stop_event = threading.Event()
-        self._listening_flag = threading.Event()
-        self._listening_flag.set()  # Auto-start listening
-        self._mic = MicrophoneStreamer(self._send_audio, self._should_stream_audio, self._stop_event)
-        self._ptt_active = False  # Initialize PTT state before signals
-
-        # Setup signal handler for toggling listening (SIGUSR1)
-        signal.signal(signal.SIGUSR1, self._handle_toggle_signal)
-        # Setup signal handler for PTT (SIGUSR2)
-        signal.signal(signal.SIGUSR2, self._handle_ptt_signal)
-        # Setup signal handler for OpenClaw mode toggle (SIGRTMIN)
-        signal.signal(signal.SIGRTMIN, self._handle_openclaw_toggle_signal)
-
-        self._reconnect_lock = threading.Lock()
-        self._reconnecting = False
-        self._connection_active = False
-        
-        # Deduplication and thread safety for typing
-        self._typing_lock = threading.Lock()
-        self._last_transcript = ""
-        self._last_transcript_time = 0
-        self._current_utterance_typed = ""
-        
-        # Buffer for streaming typing (interim results)
-        self._current_utterance_typed = ""
-        
-        # Track empty transcripts to detect stale connection
-        self._empty_transcript_count = 0
-        self._last_successful_transcript_time = time.time()
-        
-        # OpenClaw AI mode (F9 toggles)
+        self._listening_flag = threading.Event()  # F8 toggle (starts OFF)
+        self._ptt_active = False
         self._openclaw_mode = False
         self._openclaw_speaking = False
-        
-        # Keyboard listener for Alt PTT
+
+        # VAD state
+        self._audio_buffer: list[bytes] = []
+        self._speech_chunks = 0
+        self._silence_chunks = 0
+        self._in_speech = False
+        self._buffer_lock = threading.Lock()
+
+        # PTT buffer (separate from VAD buffer)
+        self._ptt_buffer: list[bytes] = []
+        self._ptt_lock = threading.Lock()
+
+        # Dedup
+        self._last_transcript = ""
+        self._last_transcript_time = 0.0
+        self._typing_lock = threading.Lock()
+
+        # Mic
+        self._mic = MicrophoneStreamer(self._on_audio_chunk, self._stop_event)
+
+        # Keyboard
         self._alt_keys = {keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt}
         self._alt_pressed = False
         self._keyboard_listener = keyboard.Listener(
             on_press=self._on_key_press,
-            on_release=self._on_key_release
+            on_release=self._on_key_release,
         )
-        
-        # Initial status write
+
+        # Signals
+        signal.signal(signal.SIGUSR1, self._handle_toggle_signal)
+        signal.signal(signal.SIGUSR2, self._handle_ptt_signal)
+        signal.signal(signal.SIGRTMIN, self._handle_openclaw_toggle_signal)
+
         self._update_status_file()
 
-    def _update_status_file(self):
-        """Write current state to /tmp/voice_typer_status."""
-        state = "ON" if self._listening_flag.is_set() else "OFF"
-        try:
-            with open("/tmp/voice_typer_status", "w") as f:
-                f.write(state)
-        except Exception as e:
-            logging.warning("Failed to write status file: %s", e)
+    # ------------------------------------------------------------------
+    # Audio chunk callback (called from mic thread for every chunk)
+    # ------------------------------------------------------------------
 
-    def _should_stream_audio(self) -> bool:
-        """Return True if we should be streaming audio (Toggle ON or PTT held)."""
-        return self._listening_flag.is_set() or self._ptt_active
+    def _on_audio_chunk(self, data: bytes):
+        """Route each mic chunk to PTT buffer or VAD state machine."""
+        if self._ptt_active:
+            with self._ptt_lock:
+                self._ptt_buffer.append(data)
+            return
+
+        if not self._listening_flag.is_set():
+            return
+
+        # Don't capture audio while OpenClaw is speaking (avoid echo)
+        if self._openclaw_speaking:
+            return
+
+        rms = self._rms(data)
+
+        with self._buffer_lock:
+            if not self._in_speech:
+                if rms >= SPEECH_THRESHOLD:
+                    self._in_speech = True
+                    self._audio_buffer = [data]
+                    self._speech_chunks = 1
+                    self._silence_chunks = 0
+                    logging.debug("VAD: speech started (rms=%.0f)", rms)
+            else:
+                self._audio_buffer.append(data)
+                self._speech_chunks += 1
+
+                if rms < SILENCE_THRESHOLD:
+                    self._silence_chunks += 1
+                else:
+                    self._silence_chunks = 0
+
+                utterance_ended = self._silence_chunks >= SILENCE_CHUNKS
+                buffer_full = len(self._audio_buffer) >= MAX_BUFFER_CHUNKS
+
+                if utterance_ended or buffer_full:
+                    if self._speech_chunks >= MIN_SPEECH_CHUNKS:
+                        audio_bytes = b"".join(self._audio_buffer)
+                        threading.Thread(
+                            target=self._transcribe_and_type,
+                            args=(audio_bytes,),
+                            daemon=True,
+                        ).start()
+                    self._audio_buffer = []
+                    self._speech_chunks = 0
+                    self._silence_chunks = 0
+                    self._in_speech = False
+
+    @staticmethod
+    def _rms(data: bytes) -> float:
+        audio = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+        return float(np.sqrt(np.mean(audio ** 2))) if audio.size else 0.0
+
+    # ------------------------------------------------------------------
+    # Transcription + typing
+    # ------------------------------------------------------------------
+
+    def _transcribe_and_type(self, audio_bytes: bytes):
+        text = self._transcriber.transcribe(audio_bytes)
+        if not text:
+            return
+
+        now = time.time()
+        with self._typing_lock:
+            if (
+                text.lower() == self._last_transcript.lower()
+                and now - self._last_transcript_time < 3.0
+            ):
+                logging.debug("Duplicate ignored: %s", text)
+                return
+            self._last_transcript = text
+            self._last_transcript_time = now
+
+        if self._openclaw_mode:
+            logging.info("OpenClaw: %s", text)
+            threading.Thread(
+                target=self._handle_openclaw_query, args=(text,), daemon=True
+            ).start()
+        else:
+            logging.info("Typing: %s", text)
+            self._type_text(text + " ")
+
+    # ------------------------------------------------------------------
+    # Keyboard listener
+    # ------------------------------------------------------------------
 
     def _on_key_press(self, key):
         if key in self._alt_keys and not self._alt_pressed:
             self._alt_pressed = True
             self._ptt_active = True
-            logging.info("Alt key pressed - PTT ACTIVE")
-            return False  # Suppress Alt key to prevent focus shift
-        return True
+            with self._ptt_lock:
+                self._ptt_buffer = []
+            logging.info("Alt key pressed — PTT ACTIVE")
+            return False  # suppress Alt to prevent focus shift
 
     def _on_key_release(self, key):
         if key in self._alt_keys and self._alt_pressed:
             self._alt_pressed = False
             self._ptt_active = False
-            # Reset transcript buffer when PTT releases
-            with self._typing_lock:
-                self._current_utterance_typed = ""
-            logging.info("Alt key released - PTT RELEASED")
-            return False  # Suppress Alt key to prevent focus shift
-        return True
+            logging.info("Alt key released — PTT RELEASED, transcribing...")
 
-    # ------------------------------------------------------------------
-    # Deepgram connection management (v5.x SDK with context manager)
-    # ------------------------------------------------------------------
+            with self._ptt_lock:
+                audio_bytes = b"".join(self._ptt_buffer)
+                self._ptt_buffer = []
 
-    def _run_streaming_session(self) -> None:
-        """Run a single streaming session. Returns when paused or stopped."""
-        backoff = 1.0
-        max_backoff = 30.0
-
-        logging.info("Connecting to Deepgram streaming (model=%s)...", self._model)
-        
-        try:
-            with self._deepgram.listen.v1.connect(
-                model=self._model,
-                language="en-US",
-                smart_format="true",
-                punctuate="true",
-                dictation="true",
-                encoding="linear16",
-                channels=str(CHANNELS),
-                sample_rate=str(SAMPLE_RATE),
-                interim_results="true",
-                utterance_end_ms="1000",
-                vad_events="true",
-                endpointing="500",
-            ) as connection:
-                logging.info("Connected to Deepgram streaming!")
-                
-                # Register event handlers
-                connection.on(EventType.OPEN, self._on_open)
-                connection.on(EventType.MESSAGE, self._on_message)
-                connection.on(EventType.ERROR, self._on_error)
-                connection.on(EventType.CLOSE, self._on_close)
-                
-                with self._dg_lock:
-                    self._dg_connection = connection
-                    self._connection_active = True
-                
-                connection.start_listening()
-                
-                # Wait loop - exit if paused or stopped
-                while not self._stop_event.is_set():
-                    # Check if we should still be listening (toggle OR PTT)
-                    if not self._listening_flag.is_set() and not self._ptt_active:
-                        logging.info("Paused - closing connection.")
-                        break
-
-                    # Check connection health
-                    if not self._connection_active:
-                         logging.warning("Connection lost unexpectedly.")
-                         break
-
-                    # Check for stale connection
-                    time_since_success = time.time() - self._last_successful_transcript_time
-                    if self._empty_transcript_count > 10 and time_since_success > 30:
-                        logging.warning("Connection stale - reconnecting...")
-                        break
-                    
-                    try:
-                        connection.send_keepalive()
-                    except: pass
-                    
-                    time.sleep(0.5)
-                
-                # Cleanup connection for this session
-                with self._dg_lock:
-                    self._connection_active = False
-                    self._dg_connection = None
-
-        except Exception as exc:
-            logging.error("Deepgram connection error: %s", exc)
-            if not self._stop_event.is_set() and self._listening_flag.is_set():
-                time.sleep(backoff) # Simple backoff if error occurred
-
-    def _on_open(self, *args, **kwargs):
-        """Called when WebSocket opens."""
-        logging.info("Deepgram connection opened")
-
-    def _on_message(self, message, *args, **kwargs):
-        """Called when a message is received from Deepgram."""
-        self._handle_message(message)
-
-    def _handle_message(self, message):
-        """Process a message from Deepgram."""
-        try:
-            # Handle transcript messages
-            if hasattr(message, 'channel') and hasattr(message.channel, 'alternatives'):
-                alternatives = message.channel.alternatives
-                if alternatives and len(alternatives) > 0:
-                    transcript = alternatives[0].transcript
-                    if transcript and transcript.strip():
-                        speech_final = getattr(message, 'speech_final', False)
-                        is_final = getattr(message, 'is_final', False)
-                        clean_transcript = transcript.strip()
-                        
-                        # Only type FINAL results (not interim) to avoid duplicates
-                        if speech_final or is_final:
-                            with self._typing_lock:
-                                # Skip if same as last typed
-                                if clean_transcript.lower() != self._last_transcript.lower():
-                                    self._last_transcript = clean_transcript
-                                    text_to_type = clean_transcript + " "
-                                    if not self._openclaw_mode:
-                                        logging.info("Typing: %s", clean_transcript)
-                                        self._type_text(text_to_type)
-        except Exception as exc:
-            logging.error("Error processing message: %s", exc)
-    
-    def _type_transcript(self, text_to_type: str, full_transcript: str, current_time: float, interim: bool = False):
-        """Type transcript text, handling deduplication and routing."""
-        if not text_to_type:
-            return
-            
-        # Check for duplicates against last final transcript
-        if (full_transcript.lower() == self._last_transcript.lower() and 
-            current_time - self._last_transcript_time < 3.0):
-            logging.debug("Duplicate ignored: %s", full_transcript)
-            return
-        
-        # Update last transcript tracking for final results
-        if not interim:
-            self._last_transcript = full_transcript
-            self._last_transcript_time = current_time
-        
-        # Route based on mode
-        if self._openclaw_mode:
-            if not interim:  # Only send final to OpenClaw
-                logging.info("🦞 OpenClaw: %s", full_transcript)
+            if audio_bytes:
                 threading.Thread(
-                    target=self._handle_openclaw_query,
-                    args=(full_transcript,),
-                    daemon=True
+                    target=self._transcribe_and_type,
+                    args=(audio_bytes,),
+                    daemon=True,
                 ).start()
-        else:
-            if interim:
-                logging.debug("Typing interim: '%s'", text_to_type)
-            else:
-                logging.info("Typing: %s", full_transcript)
-            self._type_text(text_to_type)
-    
-    def _handle_openclaw_query(self, user_text: str):
-        """Handle a query via OpenClaw (GLM-5)."""
-        import subprocess
-        
+            return False  # suppress Alt
+
+    # ------------------------------------------------------------------
+    # Typing
+    # ------------------------------------------------------------------
+
+    def _type_text(self, text: str):
+        if not text:
+            return
         try:
-            # Use openclaw task for one-shot queries
+            import subprocess
+            subprocess.run(
+                ["xdotool", "type", "--clearmodifiers", "--", text],
+                check=True,
+                timeout=10,
+            )
+        except Exception as exc:
+            logging.error("xdotool failed: %s", exc)
+
+    # ------------------------------------------------------------------
+    # OpenClaw AI mode
+    # ------------------------------------------------------------------
+
+    def _handle_openclaw_query(self, user_text: str):
+        import subprocess
+
+        try:
             result = subprocess.run(
                 ["openclaw", "task", "--no-stream", "--quiet", user_text],
                 capture_output=True,
                 text=True,
                 timeout=120,
-                cwd=os.path.expanduser("~")
+                cwd=os.path.expanduser("~"),
             )
-            
-            reply = result.stdout.strip() if result.stdout else "No response from OpenClaw."
-            if result.returncode != 0 and result.stderr:
-                logging.warning("OpenClaw stderr: %s", result.stderr)
-            
-            logging.info("🦞 Reply: %s", reply[:200] + "..." if len(reply) > 200 else reply)
-            
-            # Speak response (mute mic while speaking)
+            reply = result.stdout.strip() or "No response from OpenClaw."
+            logging.info("OpenClaw reply: %s", reply[:200])
+
             self._openclaw_speaking = True
             try:
                 self._speak_response(reply)
             finally:
                 time.sleep(0.3)
                 self._openclaw_speaking = False
-                
+
         except subprocess.TimeoutExpired:
             logging.error("OpenClaw timeout")
-        except Exception as e:
-            logging.error("OpenClaw error: %s", e)
-    
+        except Exception as exc:
+            logging.error("OpenClaw error: %s", exc)
+
     def _speak_response(self, text: str):
-        """Speak text using Deepgram TTS."""
+        """Speak text using Deepgram TTS (still used for OpenClaw responses)."""
         import subprocess
         import tempfile
         import urllib.request
-        
+        from dotenv import load_dotenv
+
+        load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
         api_key = os.getenv("DEEPGRAM_API_KEY", "")
         if not api_key:
             return
-        
+
         try:
             url = "https://api.deepgram.com/v1/speak?model=aura-asteria-en"
-            data = json.dumps({"text": text}).encode('utf-8')
+            data = json.dumps({"text": text}).encode("utf-8")
             req = urllib.request.Request(
                 url,
                 data=data,
                 headers={
                     "Authorization": f"Token {api_key}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                method="POST"
+                method="POST",
             )
-            
-            with urllib.request.urlopen(req, timeout=30) as response:
-                audio = response.read()
-            
-            # Play audio
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                audio = resp.read()
+
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                 f.write(audio)
-                temp_path = f.name
-            
-            subprocess.run(["mpv", "--no-video", "--really-quiet", temp_path], timeout=30)
-            os.unlink(temp_path)
-        except Exception as e:
-            logging.error("TTS error: %s", e)
+                tmp = f.name
 
-    def _on_error(self, error, *args, **kwargs):
-        """Called on error."""
-        logging.error("Deepgram error: %s", error)
+            subprocess.run(["mpv", "--no-video", "--really-quiet", tmp], timeout=30)
+            os.unlink(tmp)
 
-    def _on_close(self, *args, **kwargs):
-        """Called when connection closes."""
-        logging.warning("Deepgram connection closed")
-        with self._dg_lock:
-            self._connection_active = False
-
-    def _send_audio(self, data: bytes) -> None:
-        with self._dg_lock:
-            conn = self._dg_connection
-            active = self._connection_active
-        if conn is None or not active:
-            return
-        try:
-            conn.send_media(data)
-        except Exception as exc:  # pragma: no cover - network dependent
-            logging.warning("Deepgram send failed: %s", exc)
+        except Exception as exc:
+            logging.error("TTS error: %s", exc)
 
     # ------------------------------------------------------------------
-    # Typing logic
-    # ------------------------------------------------------------------
-
-    def _type_text(self, text: str) -> None:
-        """Type text into the currently focused window using xdotool."""
-        if not text:
-            return
-        try:
-            import subprocess
-            logging.debug("Typing text: '%s'", text)
-            # Use xdotool which is more reliable on Linux
-            # --clearmodifiers prevents modifier key interference
-            subprocess.run(
-                ['xdotool', 'type', '--clearmodifiers', '--', text],
-                check=True,
-                timeout=10
-            )
-        except Exception as exc:  # pragma: no cover - system dependent
-            logging.error("Failed to simulate keystrokes: %s", exc)
-
-    # ------------------------------------------------------------------
-    # Hotkey handling
+    # Signals
     # ------------------------------------------------------------------
 
     def _handle_toggle_signal(self, signum, frame):
-        """Toggle listening state on SIGUSR1."""
         if self._listening_flag.is_set():
             self._listening_flag.clear()
-            logging.info("Signal received: Listening PAUSED")
+            logging.info("Listening PAUSED")
         else:
             self._listening_flag.set()
-            logging.info("Signal received: Listening RESUMED")
+            logging.info("Listening RESUMED")
         self._update_status_file()
 
     def _handle_ptt_signal(self, signum, frame):
-        """Toggle PTT state on SIGUSR2."""
         self._ptt_active = not self._ptt_active
-        if self._ptt_active:
-             logging.info("Signal received: PTT ACTIVE")
-        else:
-             logging.info("Signal received: PTT RELEASED")
+        logging.info("PTT %s", "ACTIVE" if self._ptt_active else "RELEASED")
 
     def _handle_openclaw_toggle_signal(self, signum, frame):
-        """Toggle OpenClaw AI mode on SIGRTMIN (F9)."""
         self._openclaw_mode = not self._openclaw_mode
-        if self._openclaw_mode:
-            logging.info("🦞 OpenClaw mode ENABLED - voice commands will be sent to GLM-5")
-        else:
-            logging.info("🦞 OpenClaw mode DISABLED - back to typing mode")
+        logging.info("OpenClaw mode %s", "ENABLED" if self._openclaw_mode else "DISABLED")
+
+    def _update_status_file(self):
+        state = "ON" if self._listening_flag.is_set() else "OFF"
+        try:
+            with open("/tmp/voice_typer_status", "w") as f:
+                f.write(state)
+        except Exception as exc:
+            logging.warning("Failed to write status file: %s", exc)
 
     # ------------------------------------------------------------------
-    # Public API
+    # Run / stop
     # ------------------------------------------------------------------
 
-    def run(self) -> None:
-        logging.info("Starting VoiceTyper (Deepgram model=%s)", self._model)
-        logging.info("Press F8 to toggle listening on/off. Alt for Push-to-Talk. Ctrl+C to exit.")
+    def run(self):
+        logging.info("Starting VoiceTyper with Granite 4.0 1B Speech (local, no API key)")
+        logging.info("Waiting for model to load...")
 
-        # Start microphone capture
+        if not self._transcriber.wait_until_ready(timeout=180):
+            logging.error("Model failed to load within 3 minutes. Exiting.")
+            sys.exit(1)
+
+        logging.info("Model ready. Press F8 to toggle listening. Hold Alt for PTT. Ctrl+C to exit.")
+
         self._mic.start()
-
-        # Start hotkey listener
         self._keyboard_listener.start()
 
-        # Main loop
         try:
             while not self._stop_event.is_set():
-                if self._listening_flag.is_set() or self._ptt_active:
-                    # We are ON or PTT held - run a streaming session
-                    self._run_streaming_session()
-                else:
-                    # We are OFF - wait for signal
-                    time.sleep(0.1)
+                time.sleep(0.1)
         except KeyboardInterrupt:
-            logging.info("KeyboardInterrupt received, shutting down...")
+            logging.info("Shutting down...")
         finally:
             self.stop()
 
-    def stop(self) -> None:
+    def stop(self):
         self._stop_event.set()
         self._mic.stop()
 
-        with self._dg_lock:
-            if self._dg_connection is not None:
-                try:
-                    self._dg_connection.send_close_stream()
-                except Exception:  # pragma: no cover - network dependent
-                    pass
-                self._dg_connection = None
 
-        # Remove lock file
-        lock_file = os.path.join(os.path.dirname(__file__), "voice_typer.lock")
-        try:
-            os.remove(lock_file)
-        except FileNotFoundError:
-            pass
-
+# ---------------------------------------------------------------------------
+# Singleton enforcement
+# ---------------------------------------------------------------------------
 
 def enforce_singleton():
-    """Ensure only one instance runs. Kills older instances found in lock file."""
     lock_file = "/tmp/voice_typer.pid"
-    
-    # Check for existing instance
+
     if os.path.exists(lock_file):
         try:
-            with open(lock_file, "r") as f:
+            with open(lock_file) as f:
                 old_pid = int(f.read().strip())
-            
             if psutil.pid_exists(old_pid):
-                logging.warning(f"Found old instance (PID {old_pid}). Terminating it...")
+                logging.warning("Found old instance (PID %d), terminating...", old_pid)
                 try:
                     p = psutil.Process(old_pid)
                     p.terminate()
                     p.wait(timeout=3)
                 except (psutil.NoSuchProcess, psutil.TimeoutExpired):
-                    # Force kill if needed
                     if psutil.pid_exists(old_pid):
-                         os.kill(old_pid, signal.SIGKILL)
+                        os.kill(old_pid, signal.SIGKILL)
                 logging.info("Old instance terminated.")
-        except Exception as e:
-            logging.warning(f"Error checking lock file: {e}")
+        except Exception as exc:
+            logging.warning("Lock file check failed: %s", exc)
 
-    # Register our PID
     try:
         with open(lock_file, "w") as f:
             f.write(str(os.getpid()))
-        
-        # Cleanup on exit
-        def remove_lock():
+
+        def _remove_lock():
             try:
-                if os.path.exists(lock_file):
-                    os.remove(lock_file)
-            except: pass
-        atexit.register(remove_lock)
-        
-    except Exception as e:
-        logging.error(f"Failed to write lock file: {e}")
+                os.remove(lock_file)
+            except FileNotFoundError:
+                pass
+
+        atexit.register(_remove_lock)
+    except Exception as exc:
+        logging.error("Failed to write lock file: %s", exc)
         sys.exit(1)
 
-def main() -> None:
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-    # Suppress overly verbose SDK debug logs
-    for logger_name in ["deepgram", "deepgram.clients.listen", "websocket", "urllib3", "asyncio"]:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
-    
-    enforce_singleton()
+    for noisy in ["transformers", "urllib3", "asyncio"]:
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    typer = VoiceTyper(model="nova-2")
-    typer.run()
+    enforce_singleton()
+    VoiceTyper().run()
 
 
 if __name__ == "__main__":
