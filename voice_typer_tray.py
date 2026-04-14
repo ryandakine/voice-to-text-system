@@ -24,6 +24,8 @@ except ImportError:
 
 # Global state
 current_status = "ON"
+last_restart_time = 0
+RESTART_COOLDOWN = 10  # seconds between restart attempts
 
 # Provider config
 CONFIG_DIR = os.path.expanduser("~/.voice_typer")
@@ -49,26 +51,40 @@ def set_provider(provider):
         f.write(provider)
 
 def get_voice_typer_pid():
-    """Get the PID of running voice_typer.py."""
+    """Get the PID of the running voice typer process (any provider)."""
     lock_file = "/tmp/voice_typer.pid"
     if os.path.exists(lock_file):
         try:
             with open(lock_file, "r") as f:
-                return int(f.read().strip())
+                pid = int(f.read().strip())
+            # Verify process is actually alive
+            os.kill(pid, 0)
+            return pid
+        except (ValueError, OSError):
+            pass
+
+    # Match any voice typer script variant
+    provider = get_provider()
+    if provider == "whisper":
+        patterns = ["python.*voice_typer_whisper\\.py"]
+    elif provider == "granite":
+        patterns = ["python.*voice_typer\\.py"]
+    else:
+        patterns = ["python.*voice_typer_v1\\.py"]
+
+    my_pid = str(os.getpid())
+    for pattern in patterns:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", pattern],
+                capture_output=True,
+                text=True
+            )
+            pids = [p for p in result.stdout.strip().split("\n") if p and p != my_pid]
+            if pids:
+                return int(pids[0])
         except:
             pass
-    
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "python.*voice_typer.py"],
-            capture_output=True,
-            text=True
-        )
-        pids = [p for p in result.stdout.strip().split("\n") if p]
-        if pids:
-            return int(pids[0])
-    except:
-        pass
     return None
 
 def get_status():
@@ -92,6 +108,8 @@ def toggle_listening():
 
 def restart_voice_typer():
     """Restart voice_typer with new provider."""
+    global last_restart_time
+
     # Kill existing
     pid = get_voice_typer_pid()
     if pid:
@@ -100,27 +118,28 @@ def restart_voice_typer():
             time.sleep(1)
         except:
             pass
-    
+
     # Start new
     provider = get_provider()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
+    log_file = os.path.join(script_dir, "voice_typer.log")
+    log_fd = open(log_file, "a")
+
     if provider == "whisper":
-        # Start Whisper version
-        subprocess.Popen(
-            [sys.executable, "launcher.py"],
-            cwd=script_dir,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        script = "voice_typer_whisper.py"
+    elif provider == "granite":
+        script = "voice_typer.py"
     else:
-        # Start Deepgram version
-        subprocess.Popen(
-            [sys.executable, "voice_typer.py"],
-            cwd=script_dir,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        script = "voice_typer_v1.py"
+
+    subprocess.Popen(
+        [sys.executable, script],
+        cwd=script_dir,
+        stdout=log_fd,
+        stderr=log_fd
+    )
+    last_restart_time = time.time()
+    print(f"[tray] Started {script} ({provider})")
 
 def create_icon(status, provider="deepgram"):
     """Create a colored circle icon with provider indicator."""
@@ -219,22 +238,32 @@ def setup_tray_icon():
     
     icon.on_click = on_clicked
     
-    # Start status updater thread
+    # Start status updater thread with watchdog
     def update_loop():
+        global last_restart_time
         last_status = None
         last_provider = None
+        watchdog_counter = 0
         while True:
             time.sleep(0.5)
             new_status = get_status()
             new_provider = get_provider()
-            
+
             if new_status != last_status or new_provider != last_provider:
                 last_status = new_status
                 last_provider = new_provider
                 update_icon(icon)
-                # Refresh menu to show checkmarks
                 icon.menu = get_menu()
-    
+
+            # Watchdog: check every 5 seconds if the process is alive
+            watchdog_counter += 1
+            if watchdog_counter >= 10:
+                watchdog_counter = 0
+                pid = get_voice_typer_pid()
+                if pid is None and (time.time() - last_restart_time) > RESTART_COOLDOWN:
+                    print("[tray] Voice typer process died, restarting...")
+                    restart_voice_typer()
+
     Thread(target=update_loop, daemon=True).start()
     
     icon.run()
@@ -247,11 +276,12 @@ def update_icon(icon):
     icon.title = f"VoiceTyper ({provider.upper()}) - {status}"
 
 def main():
-    # Check if voice_typer is running
+    # Auto-start voice typer if not running
     pid = get_voice_typer_pid()
     if not pid:
-        print("Warning: voice_typer.py is not running. Start it first.")
-    
+        print("[tray] Voice typer not running, starting it...")
+        restart_voice_typer()
+
     setup_tray_icon()
 
 if __name__ == "__main__":
