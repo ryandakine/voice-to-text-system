@@ -47,6 +47,14 @@ overlay_position = bottom-right   ; bottom-right | bottom-left | top-right | top
 overlay_pulse_hz = 1.2            ; speech-state pulse rate (0.5 calm → 2.0 urgent)
 audio_cues = true                 ; chimes on utterance start/end, cmd ack, errors
 
+# Streaming partials: interim transcripts displayed in the overlay while you
+# speak. NEVER typed into the target window — final text goes there via the
+# normal text_inserter path. Auto-disabled on CPU (re-transcription cost).
+;streaming = true                 ; uncomment to force on/off regardless of device
+streaming_interval_ms = 1200      ; how often partials are emitted during speech
+streaming_window_ms = 5000        ; bounded snapshot — never transcribes more than this at once
+streaming_min_diff_chars = 2      ; hysteresis — skip emission if text differs by less
+
 [TextInsertion]
 # keyboard = type characters one at a time (universal but slow for long text)
 # clipboard = copy-paste (fast, but depends on xclip)

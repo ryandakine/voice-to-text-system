@@ -38,6 +38,13 @@ except Exception:
         TRANSCRIBING = "transcribing"
         ERROR = "error"
 
+# Change 3 — overlay-only streaming partials
+try:
+    from src.partial_buffer import PartialBuffer
+    PARTIAL_AVAILABLE = True
+except Exception:
+    PARTIAL_AVAILABLE = False
+
 _MODEL_TIERS = ["large-v3", "large-v2", "large", "medium", "small", "base", "tiny"]
 # Full chain for bookkeeping/discovery; the actual step function uses _MODEL_TIERS
 # so `small.en` → `base.en` (next real size tier), not `small.en` → `small`.
@@ -400,6 +407,12 @@ class VoiceTyperWhisper:
         overlay_pulse_hz = 1.2
         audio_cues = True
 
+        # Streaming partials config (Change 3) — disabled on CPU by default
+        streaming = None   # resolved after config read based on device
+        streaming_interval_ms = 1200
+        streaming_window_ms = 5000
+        streaming_min_diff_chars = 2
+
         config_path = os.path.expanduser("~/.config/voice-to-text/config.ini")
         if os.path.exists(config_path):
             import configparser
@@ -414,6 +427,28 @@ class VoiceTyperWhisper:
                 overlay_position = cfg.get("Whisper", "overlay_position", fallback=overlay_position)
                 overlay_pulse_hz = cfg.getfloat("Whisper", "overlay_pulse_hz", fallback=overlay_pulse_hz)
                 audio_cues = cfg.getboolean("Whisper", "audio_cues", fallback=audio_cues)
+                if cfg.has_option("Whisper", "streaming"):
+                    streaming = cfg.getboolean("Whisper", "streaming")
+                streaming_interval_ms = cfg.getint("Whisper", "streaming_interval_ms", fallback=streaming_interval_ms)
+                streaming_window_ms = cfg.getint("Whisper", "streaming_window_ms", fallback=streaming_window_ms)
+                streaming_min_diff_chars = cfg.getint("Whisper", "streaming_min_diff_chars", fallback=streaming_min_diff_chars)
+
+        # Default streaming decision: on if CUDA, off if CPU (guards against
+        # the O(n²) compute cost on CPU that the round-2 review flagged).
+        # Read device directly from config rather than the not-yet-created transcriber.
+        if streaming is None:
+            device_cfg = "cuda"
+            if os.path.exists(config_path):
+                import configparser
+                _cfg = configparser.ConfigParser()
+                _cfg.read(config_path)
+                if _cfg.has_section("Whisper"):
+                    device_cfg = _cfg.get("Whisper", "device", fallback="cuda")
+            streaming = device_cfg.startswith("cuda")
+        self._streaming_enabled = streaming
+        self._streaming_interval_ms = streaming_interval_ms
+        self._streaming_window_ms = streaming_window_ms
+        self._streaming_min_diff = streaming_min_diff_chars
 
         self._silence_frames_threshold = max(1, math.ceil(vad_silence_ms / FRAME_MS))
         self._min_speech_frames = max(1, math.ceil(min_speech_ms / FRAME_MS))
@@ -469,6 +504,23 @@ class VoiceTyperWhisper:
             except Exception as exc:
                 logging.warning("Overlay init failed (%s), continuing headless.", exc)
                 self._overlay = None
+
+        # Change 3 — streaming partials (overlay-only; never types into target window)
+        self._partial_buf: Optional["PartialBuffer"] = None
+        if self._streaming_enabled and PARTIAL_AVAILABLE and self._overlay is not None:
+            try:
+                self._partial_buf = PartialBuffer(
+                    transcribe_fn=self._transcriber.transcribe,
+                    on_partial=self._emit_partial,
+                    interval_ms=self._streaming_interval_ms,
+                    max_window_ms=self._streaming_window_ms,
+                    min_diff_chars=self._streaming_min_diff,
+                )
+                logging.info("Streaming partials enabled (interval=%dms, window=%dms)",
+                             self._streaming_interval_ms, self._streaming_window_ms)
+            except Exception as exc:
+                logging.warning("PartialBuffer init failed (%s)", exc)
+                self._partial_buf = None
 
         self._mic = MicrophoneStreamer(self._on_audio_chunk, self._stop_event)
 
@@ -537,6 +589,15 @@ class VoiceTyperWhisper:
                     self._in_speech = False
                     utterance_ended = True
 
+        # Change 3: feed PartialBuffer with every frame during speech
+        if self._partial_buf is not None:
+            if utterance_started:
+                self._partial_buf.on_utterance_start()
+            if self._in_speech or utterance_started:
+                self._partial_buf.append_frame(raw_frame)
+            if utterance_ended:
+                self._partial_buf.on_utterance_end()
+
         # Change 2: overlay state transitions
         if self._overlay is not None:
             if utterance_started:
@@ -596,6 +657,12 @@ class VoiceTyperWhisper:
             self._transcribe_lock.release()
 
     # ---------- Voice command handlers (Change 1) ----------
+
+    def _emit_partial(self, text: str):
+        """Change 3 callback: route partial transcription to overlay ONLY.
+        Never types into the target window (preserves insertion integrity)."""
+        if self._overlay is not None:
+            self._overlay.show_partial(text)
 
     def _play_cmd_ack(self):
         if self._overlay is not None:
@@ -753,6 +820,9 @@ class VoiceTyperWhisper:
         if self._overlay is not None:
             self._overlay.set_state(OverlayState.IDLE)
 
+        if self._partial_buf is not None:
+            self._partial_buf.start()
+
         self._mic.start()
         self._keyboard_listener.start()
 
@@ -766,6 +836,11 @@ class VoiceTyperWhisper:
 
     def stop(self):
         self._stop_event.set()
+        if self._partial_buf is not None:
+            try:
+                self._partial_buf.stop()
+            except Exception:
+                pass
         self._mic.stop()
         self._keyboard_listener.stop()
         self._update_status_file()
