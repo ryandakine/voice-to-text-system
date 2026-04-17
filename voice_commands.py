@@ -63,9 +63,21 @@ class VoiceCommandProcessor:
         ],
     }
     
-    def __init__(self, enabled: bool = True, prefix: Optional[str] = "computer"):
+    def __init__(self, enabled: bool = True, prefix: Optional[str] = "computer",
+                 prefixes: Optional[list] = None):
+        """
+        prefix: single wake word (backward compat).
+        prefixes: list of accepted wake phrases (e.g. ["computer", "hey computer",
+                  "ok computer"]). If provided, overrides `prefix`.
+        """
         self.enabled = enabled
-        self.prefix = prefix.lower() if prefix else None
+        if prefixes:
+            self.prefixes = [p.lower() for p in prefixes]
+        elif prefix:
+            self.prefixes = [prefix.lower()]
+        else:
+            self.prefixes = []
+        self.prefix = self.prefixes[0] if self.prefixes else None
         self.handlers: Dict[VoiceCommand, Callable] = {}
         self.last_command: Optional[VoiceCommand] = None
         
@@ -80,26 +92,34 @@ class VoiceCommandProcessor:
         """
         if not self.enabled or not transcript:
             return None
-            
-        text = transcript.lower().strip()
-        
-        # Check for command prefix (if configured)
-        if self.prefix:
-            if text.startswith(self.prefix + " "):
-                text = text[len(self.prefix) + 1:].strip()
-            elif text == self.prefix:
-                return None  # Just said prefix, waiting for command
-            else:
-                return None  # Prefix not found
-        
+        if not isinstance(transcript, str):
+            return None
+
+        text = transcript.lower().strip().rstrip(".,!?")
+
+        # Check for any accepted wake phrase
+        if self.prefixes:
+            matched_prefix = None
+            for p in self.prefixes:
+                if text.startswith(p + " "):
+                    matched_prefix = p
+                    break
+                if text == p:
+                    return None  # just said wake phrase, waiting for command
+            if not matched_prefix:
+                return None
+            text = text[len(matched_prefix) + 1:].strip()
+
         for command, patterns in self.COMMAND_PATTERNS.items():
             for pattern in patterns:
                 if re.search(pattern, text, re.IGNORECASE):
                     logging.info(f"Voice command detected: {command.name}")
                     self.last_command = command
-                    self._execute_handler(command)
+                    handled = self._execute_handler(command)
+                    if not handled:
+                        logging.warning(f"Voice command {command.name} had no handler or handler failed")
                     return command
-        
+
         return None
     
     def _execute_handler(self, command: VoiceCommand) -> bool:

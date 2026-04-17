@@ -22,6 +22,8 @@ from pynput import keyboard
 
 from faster_whisper import WhisperModel
 
+from voice_commands import VoiceCommandProcessor, VoiceCommand
+
 _MODEL_TIERS = ["large-v3", "large-v2", "large", "medium", "small", "base", "tiny"]
 # Full chain for bookkeeping/discovery; the actual step function uses _MODEL_TIERS
 # so `small.en` → `base.en` (next real size tier), not `small.en` → `small`.
@@ -414,10 +416,22 @@ class VoiceTyperWhisper:
 
         self._last_transcript = ""
         self._last_transcript_time = 0.0
+        self._last_typed_text: Optional[str] = None
         self._typing_lock = threading.Lock()
 
         # Lazy-cached text inserter (R7: defer import-time side effects)
         self._text_inserter = None
+
+        # Voice command processor with wake-phrase aliases
+        self._cmd = VoiceCommandProcessor(
+            enabled=True,
+            prefixes=["computer", "hey computer", "ok computer", "okay computer"],
+        )
+        self._cmd.register_handler(VoiceCommand.STOP_LISTENING, self._handle_stop_listening)
+        self._cmd.register_handler(VoiceCommand.START_LISTENING, self._handle_start_listening)
+        self._cmd.register_handler(VoiceCommand.CLEAR_LAST, self._handle_clear_last)
+        self._cmd.register_handler(VoiceCommand.UNDO, self._handle_undo)
+        self._cmd.register_handler(VoiceCommand.HELP, self._handle_help)
 
         self._mic = MicrophoneStreamer(self._on_audio_chunk, self._stop_event)
 
@@ -503,6 +517,16 @@ class VoiceTyperWhisper:
             if not text:
                 return
 
+            # H2: race guard — listening may have been paused mid-transcribe
+            # (e.g., by a concurrent "computer stop listening"). Honor that.
+            if not self._listening_flag.is_set() and not self._ptt_active:
+                logging.debug("Listening disabled after transcribe, dropping.")
+                return
+
+            # C2/C3/H3/H5 round-2 fix: voice command interception before typing
+            if self._cmd.process(text) is not None:
+                return
+
             now = time.time()
             with self._typing_lock:
                 if (text.lower() == self._last_transcript.lower()
@@ -511,10 +535,54 @@ class VoiceTyperWhisper:
                 self._last_transcript = text
                 self._last_transcript_time = now
 
+            typed = text + " "
             logging.info("Typing: %s", text)
-            self._type_text(text + " ")
+            self._type_text(typed)
+            # Track last typed output so clear-last / undo commands know what to remove
+            self._last_typed_text = typed
         finally:
             self._transcribe_lock.release()
+
+    # ---------- Voice command handlers (Change 1) ----------
+
+    def _handle_stop_listening(self):
+        self._listening_flag.clear()
+        logging.info("Voice command: listening PAUSED")
+        self._update_status_file()
+
+    def _handle_start_listening(self):
+        self._listening_flag.set()
+        logging.info("Voice command: listening RESUMED")
+        self._update_status_file()
+
+    def _handle_clear_last(self):
+        """C2: use app-level undo (Ctrl+Z), not counted backspaces.
+        Works regardless of clipboard-paste vs keystroke insertion."""
+        try:
+            subprocess.run(
+                ["xdotool", "key", "--clearmodifiers", "ctrl+z"],
+                check=True, timeout=5,
+            )
+            logging.info("Voice command: cleared last utterance via Ctrl+Z")
+            self._last_typed_text = None
+        except Exception as exc:
+            logging.error("clear_last failed: %s", exc)
+
+    def _handle_undo(self):
+        self._handle_clear_last()
+
+    def _handle_help(self):
+        """C3: route help to notify-send, never type it into the target window."""
+        help_text = self._cmd.get_help_text()
+        try:
+            subprocess.run(
+                ["notify-send", "-t", "10000", "-i", "audio-input-microphone",
+                 "Voice Typer — Commands", help_text],
+                timeout=5,
+            )
+            logging.info("Voice command: help displayed via notify-send")
+        except Exception as exc:
+            logging.error("help notify-send failed: %s", exc)
 
     def _on_key_press(self, key):
         if key in self._alt_keys and not self._alt_pressed:
