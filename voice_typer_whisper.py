@@ -627,14 +627,17 @@ class VoiceTyperWhisper:
             if not text:
                 return
 
-            # H2: race guard — listening may have been paused mid-transcribe
-            # (e.g., by a concurrent "computer stop listening"). Honor that.
-            if not self._listening_flag.is_set() and not self._ptt_active:
-                logging.debug("Listening disabled after transcribe, dropping.")
+            # Voice commands ALWAYS run — even when listening is paused, the
+            # user must be able to say "computer start listening" to resume.
+            # Commands come via PTT in that case (Alt hold bypasses the
+            # listening flag in _on_audio_chunk).
+            if self._cmd.process(text) is not None:
                 return
 
-            # C2/C3/H3/H5 round-2 fix: voice command interception before typing
-            if self._cmd.process(text) is not None:
+            # After commands, only normal typing is gated by the listening flag.
+            # H2 race guard: listening may have been cleared mid-transcribe.
+            if not self._listening_flag.is_set():
+                logging.debug("Listening disabled after transcribe, dropping.")
                 return
 
             now = time.time()

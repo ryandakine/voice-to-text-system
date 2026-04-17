@@ -118,3 +118,17 @@ def test_listening_disabled_mid_transcribe_drops_text():
     vt._transcribe_and_type(b"fakeaudio")
 
     fake_inserter.insert_text.assert_not_called()
+
+
+def test_start_listening_command_works_when_listening_is_off():
+    """Critical: 'computer start listening' must fire even when paused,
+    otherwise the user can never resume after a 'stop listening' command.
+    Commands reach this path via Alt-PTT (the PTT buffer bypasses the
+    listening flag in _on_audio_chunk)."""
+    vt = _make_typer()
+    vt._listening_flag.clear()  # paused
+    vt._transcriber.transcribe = MagicMock(return_value="computer start listening")
+
+    vt._transcribe_and_type(b"fakeaudio")
+
+    assert vt._listening_flag.is_set(), "start-listening command must resume listening even from paused"
