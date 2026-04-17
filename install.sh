@@ -59,9 +59,26 @@ PROVIDER_FILE="$STATE_DIR/provider.txt"
 
 mkdir -p "$CONFIG_DIR" "$STATE_DIR"
 
+# Auto-detect GPU so the default config matches the host.
+#   nvidia-smi present + returns 0 → assume CUDA works, keep small.en + cuda
+#   otherwise → switch to CPU-friendly defaults (base.en + cpu, int8 compute)
+DETECTED_DEVICE="cuda"
+DETECTED_MODEL="small.en"
+if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi >/dev/null 2>&1; then
+    DETECTED_DEVICE="cpu"
+    DETECTED_MODEL="base.en"
+    log "No NVIDIA GPU detected — defaulting to device=cpu, model=base.en."
+    log "(You can change these in $CONFIG_FILE after install.)"
+else
+    log "NVIDIA GPU detected — defaulting to device=cuda, model=small.en."
+fi
+
 if [[ ! -f "$CONFIG_FILE" ]]; then
     log "Writing default config to $CONFIG_FILE"
-    cp config.ini.example "$CONFIG_FILE"
+    sed \
+        -e "s/^device = cuda/device = $DETECTED_DEVICE/" \
+        -e "s/^model = small.en/model = $DETECTED_MODEL/" \
+        config.ini.example > "$CONFIG_FILE"
 else
     log "Config already exists at $CONFIG_FILE (leaving untouched)"
 fi
