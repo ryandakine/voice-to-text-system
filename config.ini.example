@@ -41,6 +41,12 @@ vad_silence_ms = 448       ; end-of-utterance silence window
 min_speech_ms = 192        ; minimum speech length to transcribe (rejects noise blips)
 max_buffer_ms = 30000      ; max utterance length before forced transcribe
 
+# Listening overlay (GTK3 corner indicator, 5 states: loading/idle/speech/transcribing/error)
+overlay_enabled = true
+overlay_position = bottom-right   ; bottom-right | bottom-left | top-right | top-left
+overlay_pulse_hz = 1.2            ; speech-state pulse rate (0.5 calm → 2.0 urgent)
+audio_cues = true                 ; chimes on utterance start/end, cmd ack, errors
+
 [TextInsertion]
 # keyboard = type characters one at a time (universal but slow for long text)
 # clipboard = copy-paste (fast, but depends on xclip)

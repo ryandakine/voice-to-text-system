@@ -28,6 +28,7 @@ SYSTEM_DEPS=(
     libgirepository1.0-dev
     libcairo2-dev
     gir1.2-gtk-3.0
+    libnotify-bin            # for notify-send (voice command help display)
     ffmpeg
 )
 if command -v apt-get >/dev/null 2>&1; then

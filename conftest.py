@@ -22,6 +22,13 @@ _stub("pyperclip")
 _stub("whisper")
 _stub("silero_vad")
 
+# GTK stubs — overlay imports them at module level, tests never render a window.
+if "gi" not in sys.modules:
+    gi = MagicMock()
+    gi.require_version = MagicMock()
+    sys.modules["gi"] = gi
+    sys.modules["gi.repository"] = MagicMock()
+
 # faster_whisper needs to expose WhisperModel as an attribute of the module.
 if "faster_whisper" not in sys.modules:
     fw = MagicMock()

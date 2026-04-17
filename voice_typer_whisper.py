@@ -24,6 +24,20 @@ from faster_whisper import WhisperModel
 
 from voice_commands import VoiceCommandProcessor, VoiceCommand
 
+# Optional overlay — lazy-imported so tests and CI without GTK still work.
+try:
+    from src.listening_overlay import ListeningOverlay, OverlayState
+    OVERLAY_AVAILABLE = True
+except Exception:
+    OVERLAY_AVAILABLE = False
+    class OverlayState:  # type: ignore
+        OFF = "off"
+        LOADING = "loading"
+        IDLE = "idle"
+        SPEECH = "speech"
+        TRANSCRIBING = "transcribing"
+        ERROR = "error"
+
 _MODEL_TIERS = ["large-v3", "large-v2", "large", "medium", "small", "base", "tiny"]
 # Full chain for bookkeeping/discovery; the actual step function uses _MODEL_TIERS
 # so `small.en` → `base.en` (next real size tier), not `small.en` → `small`.
@@ -380,6 +394,12 @@ class VoiceTyperWhisper:
         min_speech_ms = 192
         max_buffer_ms = 30000
 
+        # Overlay config (Change 2)
+        overlay_enabled = True
+        overlay_position = "bottom-right"
+        overlay_pulse_hz = 1.2
+        audio_cues = True
+
         config_path = os.path.expanduser("~/.config/voice-to-text/config.ini")
         if os.path.exists(config_path):
             import configparser
@@ -390,6 +410,10 @@ class VoiceTyperWhisper:
                 vad_silence_ms = cfg.getfloat("Whisper", "vad_silence_ms", fallback=vad_silence_ms)
                 min_speech_ms = cfg.getfloat("Whisper", "min_speech_ms", fallback=min_speech_ms)
                 max_buffer_ms = cfg.getfloat("Whisper", "max_buffer_ms", fallback=max_buffer_ms)
+                overlay_enabled = cfg.getboolean("Whisper", "overlay_enabled", fallback=overlay_enabled)
+                overlay_position = cfg.get("Whisper", "overlay_position", fallback=overlay_position)
+                overlay_pulse_hz = cfg.getfloat("Whisper", "overlay_pulse_hz", fallback=overlay_pulse_hz)
+                audio_cues = cfg.getboolean("Whisper", "audio_cues", fallback=audio_cues)
 
         self._silence_frames_threshold = max(1, math.ceil(vad_silence_ms / FRAME_MS))
         self._min_speech_frames = max(1, math.ceil(min_speech_ms / FRAME_MS))
@@ -433,6 +457,19 @@ class VoiceTyperWhisper:
         self._cmd.register_handler(VoiceCommand.UNDO, self._handle_undo)
         self._cmd.register_handler(VoiceCommand.HELP, self._handle_help)
 
+        # Change 2 — embedded overlay + audio cues
+        self._overlay = None
+        if overlay_enabled and OVERLAY_AVAILABLE:
+            try:
+                self._overlay = ListeningOverlay(
+                    position=overlay_position,
+                    pulse_hz=overlay_pulse_hz,
+                    audio_cues=audio_cues,
+                )
+            except Exception as exc:
+                logging.warning("Overlay init failed (%s), continuing headless.", exc)
+                self._overlay = None
+
         self._mic = MicrophoneStreamer(self._on_audio_chunk, self._stop_event)
 
         self._alt_keys = {keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt}
@@ -470,6 +507,7 @@ class VoiceTyperWhisper:
 
     def _process_vad_frame(self, raw_frame: bytes, is_speech: bool):
         utterance_ended = False
+        utterance_started = False
         audio_to_transcribe: Optional[bytes] = None
 
         with self._buffer_lock:
@@ -479,6 +517,7 @@ class VoiceTyperWhisper:
                     self._audio_buffer = [raw_frame]
                     self._speech_frame_count = 1
                     self._silence_frame_count = 0
+                    utterance_started = True
             else:
                 self._audio_buffer.append(raw_frame)
                 self._speech_frame_count += 1
@@ -497,6 +536,16 @@ class VoiceTyperWhisper:
                     self._silence_frame_count = 0
                     self._in_speech = False
                     utterance_ended = True
+
+        # Change 2: overlay state transitions
+        if self._overlay is not None:
+            if utterance_started:
+                self._overlay.set_state(OverlayState.SPEECH)
+            elif utterance_ended:
+                # transcribing until final text arrives (or no audio to transcribe)
+                self._overlay.set_state(
+                    OverlayState.TRANSCRIBING if audio_to_transcribe else OverlayState.IDLE
+                )
 
         # R3: reset Silero outside _buffer_lock, under _silero_lock (via vad.reset)
         if utterance_ended:
@@ -540,20 +589,33 @@ class VoiceTyperWhisper:
             self._type_text(typed)
             # Track last typed output so clear-last / undo commands know what to remove
             self._last_typed_text = typed
+            # After text is inserted, return overlay to idle
+            if self._overlay is not None:
+                self._overlay.set_state(OverlayState.IDLE)
         finally:
             self._transcribe_lock.release()
 
     # ---------- Voice command handlers (Change 1) ----------
 
+    def _play_cmd_ack(self):
+        if self._overlay is not None:
+            self._overlay.play_cue("cmd_ack")
+
     def _handle_stop_listening(self):
         self._listening_flag.clear()
         logging.info("Voice command: listening PAUSED")
         self._update_status_file()
+        if self._overlay is not None:
+            self._overlay.set_state(OverlayState.OFF)
+        self._play_cmd_ack()
 
     def _handle_start_listening(self):
         self._listening_flag.set()
         logging.info("Voice command: listening RESUMED")
         self._update_status_file()
+        if self._overlay is not None:
+            self._overlay.set_state(OverlayState.IDLE)
+        self._play_cmd_ack()
 
     def _handle_clear_last(self):
         """C2: use app-level undo (Ctrl+Z), not counted backspaces.
@@ -565,8 +627,11 @@ class VoiceTyperWhisper:
             )
             logging.info("Voice command: cleared last utterance via Ctrl+Z")
             self._last_typed_text = None
+            self._play_cmd_ack()
         except Exception as exc:
             logging.error("clear_last failed: %s", exc)
+            if self._overlay is not None:
+                self._overlay.play_cue("error")
 
     def _handle_undo(self):
         self._handle_clear_last()
@@ -581,6 +646,7 @@ class VoiceTyperWhisper:
                 timeout=5,
             )
             logging.info("Voice command: help displayed via notify-send")
+            self._play_cmd_ack()
         except Exception as exc:
             logging.error("help notify-send failed: %s", exc)
 
@@ -654,14 +720,28 @@ class VoiceTyperWhisper:
         logging.info("Starting VoiceTyper with faster-whisper + Silero VAD (local)")
         logging.info("Waiting for models to load...")
 
+        # Change 2: overlay shows "loading" while models warm up
+        if self._overlay is not None:
+            self._overlay.start()
+            self._overlay.set_state(OverlayState.LOADING)
+
         if not self._transcriber.wait_until_ready(timeout=180):
             err = self._transcriber.load_error or "load timed out"
             logging.error("faster-whisper failed to load: %s. Exiting.", err)
+            if self._overlay is not None:
+                self._overlay.set_state(OverlayState.ERROR)
+                subprocess.Popen(
+                    ["notify-send", "-u", "critical", "Voice Typer",
+                     f"faster-whisper failed to load: {err}"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
             return
 
         if not self._vad.wait_until_ready(timeout=60):
             err = self._vad.load_error or "load timed out"
             logging.error("Silero VAD failed to load: %s. Exiting.", err)
+            if self._overlay is not None:
+                self._overlay.set_state(OverlayState.ERROR)
             return
 
         logging.info(
@@ -670,6 +750,9 @@ class VoiceTyperWhisper:
             self._silence_frames_threshold, self._silence_frames_threshold * FRAME_MS,
             self._min_speech_frames, self._max_buffer_frames,
         )
+        if self._overlay is not None:
+            self._overlay.set_state(OverlayState.IDLE)
+
         self._mic.start()
         self._keyboard_listener.start()
 
@@ -686,6 +769,11 @@ class VoiceTyperWhisper:
         self._mic.stop()
         self._keyboard_listener.stop()
         self._update_status_file()
+        if self._overlay is not None:
+            try:
+                self._overlay.stop()
+            except Exception:
+                pass
         logging.info("VoiceTyperWhisper stopped.")
 
 
