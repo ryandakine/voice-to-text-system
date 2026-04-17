@@ -86,12 +86,16 @@ def test_downgrade_swaps_model_via_build_model_helper():
     assert ok
     assert t._model is initial
 
-    # Force downgrade criteria
+    # Normalize state regardless of any config file on the test runner.
+    t._model_name = "small.en"
+    t._downgrade_floor = "tiny.en"
+    t._latency_samples.clear()
     t._latency_samples.extend([True] * t._downgrade_window)
+
     with patch("voice_typer_whisper.WhisperModel", return_value=swapped):
         t._try_downgrade()
     assert t._model is swapped
-    assert t._model_name == "base.en"  # next smaller than small.en in DOWNGRADE_CHAIN
+    assert t._model_name == "base.en"  # next size tier down, preserves .en suffix
 
 
 # ---------- R3: Silero reset is called when an utterance ends ----------
