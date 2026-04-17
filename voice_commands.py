@@ -137,11 +137,14 @@ class VoiceCommandProcessor:
         lines = ["🎤 Voice Commands:"]
         lines.append(f"  (Prefix with '{self.prefix}' if configured)\n")
         
+        sep = '" or "'
         for command, patterns in self.COMMAND_PATTERNS.items():
             examples = patterns[:2]  # Show first 2 examples
             examples_clean = [e.replace(r'\b', '').replace(r'^', '').replace(r'$', '') for e in examples]
-            lines.append(f"  • {command.name.replace('_', ' ').title()}")
-            lines.append(f"    Say: \"{', \" or \"'.join(examples_clean)}\"")
+            joined = sep.join(examples_clean)
+            name_title = command.name.replace('_', ' ').title()
+            lines.append(f"  • {name_title}")
+            lines.append(f'    Say: "{joined}"')
         
         return '\n'.join(lines)
     
