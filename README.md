@@ -4,7 +4,8 @@ A system-wide, local-first voice dictation tool for Linux. Hold **Alt** to talk,
 
 Runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2) locally on your GPU or CPU with [Silero VAD](https://github.com/snakers4/silero-vad) for neural silence detection. No cloud, no API keys, no per-minute cost. Cloud (Deepgram) and alternate local (IBM Granite) backends are optional.
 
-![demo placeholder — record with peek: sudo apt install peek](docs/demo.gif)
+<!-- Demo GIF placeholder — record with peek (sudo apt install peek) and drop at docs/demo.gif -->
+
 
 ## Why this exists
 
