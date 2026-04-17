@@ -718,13 +718,13 @@ class VoiceTyperWhisper:
             logging.error("help notify-send failed: %s", exc)
 
     def _on_key_press(self, key):
+        # Do NOT return False from pynput callbacks — that stops the listener.
         if key in self._alt_keys and not self._alt_pressed:
             self._alt_pressed = True
             self._ptt_active = True
             with self._ptt_lock:
                 self._ptt_buffer = []
             logging.info("Alt key pressed — PTT ACTIVE")
-            return False
 
     def _on_key_release(self, key):
         if key in self._alt_keys and self._alt_pressed:
@@ -740,7 +740,6 @@ class VoiceTyperWhisper:
                     args=(audio_bytes,),
                     daemon=True,
                 ).start()
-            return False
 
     def _type_text(self, text: str):
         """R2: delegate to src/text_insertion.py unconditionally (all lengths)."""
