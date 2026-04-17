@@ -53,11 +53,47 @@ echo whisper > ~/.voice_typer/provider.txt
 
 Once running:
 
-- **Alt (hold)** — push-to-talk. Release to transcribe.
-- **F8** — toggle continuous listening on/off.
-- **Esc** — emergency stop.
+### Recommended flow
 
-Start via the tray icon (`voice_typer_tray.py`) or directly:
+Listening is **on by default**. Just speak — text types into whatever app has focus. Pause listening when you don't want it picking things up.
+
+### Pausing / resuming
+
+| Want to... | Do this |
+|-----------|---------|
+| Quick pause (phone call, thinking out loud) | Press your **hardware mic mute button**, or **left-click the tray icon** |
+| Resume | Unmute the mic / click the tray again |
+| Hands-free pause | Say **"computer stop listening"** (or "hey computer stop listening") |
+| Resume from voice-pause | **Hold Alt** and say **"computer start listening"**, then release |
+
+### Hotkeys
+
+- **Alt (hold)** — push-to-talk. Audio captured while held; transcribes on release. Useful when you want a guaranteed start/end boundary, or to issue voice commands while listening is paused.
+- **F8** — toggle continuous listening on/off. Note: some Linux keyboards/WMs grab F8 before it reaches the app — if this doesn't work, use the tray icon or a voice command instead.
+- **Esc** — emergency stop listening.
+
+### Voice commands (wake phrases: "computer", "hey computer", "ok computer", "okay computer")
+
+- `stop listening` — pause
+- `start listening` — resume (must be spoken while holding Alt since normal capture is paused)
+- `scratch that` / `clear that` / `delete that` — undo last dictation via Ctrl+Z (works in any app with standard undo)
+- `help` / `what can i say` — show command cheatsheet as a desktop notification
+
+### Visual feedback
+
+Corner overlay (bottom-right by default, configurable):
+
+- **Yellow spinner** — model loading/downloading
+- **Low-alpha green ring** — listening, no active speech
+- **Green pulse** — you're speaking right now
+- **Blue slow pulse** — transcribing (after you stop speaking, before text appears)
+- **Red** — error (paired with a desktop notification)
+
+Short audio cues play on utterance start/end, successful commands, and errors. Turn off with `audio_cues = false` in config.
+
+### Running
+
+Start via the tray icon (`voice_typer_tray.py`), the system-menu shortcut (installed by `install.sh`), or directly:
 
 ```bash
 ./run_voice_typer.sh
