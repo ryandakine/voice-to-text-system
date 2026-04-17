@@ -17,7 +17,7 @@ set -euo pipefail
 
 PULSE_TCP_PORT="${1:-4713}"
 REMOTE_PULSE="tcp:127.0.0.1:${PULSE_TCP_PORT}"
-REPO="${VOICE_TYPER_REPO:-/home/ryan/voice-to-text-system}"
+REPO="${VOICE_TYPER_REPO:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
 LAUNCHER="${REPO}/run_voice_typer.sh"
 VENV_PY="${REPO}/.venv/bin/python"
 SCRIPT="${REPO}/voice_typer_whisper.py"

@@ -1,10 +1,22 @@
 # Core speech recognition
 SpeechRecognition>=3.10.0
 pyaudio>=0.2.11
-openai-whisper>=20231117
-faster-whisper>=1.0.0
+
+# Whisper path (local, free — blessed default)
+faster-whisper>=1.2.0,<2.0
 silero-vad>=5.0
-pyperclip>=1.8.2
+
+# Alternate local Whisper runtime (kept for compatibility; not required)
+openai-whisper>=20231117
+
+# Alternate local backend: IBM Granite 4.0 1B Speech
+transformers>=4.52.1
+torchaudio>=2.0.0
+accelerate>=0.27.0
+peft>=0.10.0
+
+# Deepgram cloud provider (optional, requires DEEPGRAM_API_KEY)
+deepgram-sdk>=3.0.0
 
 # GUI and system integration
 PyGObject>=3.42.0
@@ -20,18 +32,14 @@ librosa>=0.10.0
 # System utilities
 python-xlib>=0.33
 pyautogui>=0.9.54
+pyperclip>=1.8.2
+
+# Config and env
+python-dotenv>=1.0.0
+configparser>=5.3.0
+
+# Packaging
+pyinstaller>=6.4.0
 
 # Additional utilities
 requests>=2.31.0
-configparser>=5.3.0
-pyinstaller>=6.4.0
-
-# Granite 4.0 local STT
-transformers>=4.52.1
-torchaudio>=2.0.0
-accelerate>=0.27.0
-peft>=0.10.0
-
-# Deepgram integration (kept for TTS/OpenClaw only)
-deepgram-sdk>=3.0.0
-python-dotenv>=1.0.0

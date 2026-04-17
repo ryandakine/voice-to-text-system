@@ -20,13 +20,13 @@ Your voice-to-text system is now running with **push-to-talk** functionality!
 
 ### Method 1: Command Line
 ```bash
-cd /home/ryan/code/voice-to-text-system
+cd $REPO_DIR
 .venv/bin/python start_push_to_talk.py
 ```
 
 ### Method 2: Background Process
 ```bash
-cd /home/ryan/code/voice-to-text-system
+cd $REPO_DIR
 nohup .venv/bin/python start_push_to_talk.py > push_to_talk.log 2>&1 &
 ```
 
@@ -39,7 +39,7 @@ ps aux | grep push_to_talk
 
 ### View logs:
 ```bash
-tail -f /home/ryan/code/voice-to-text-system/push_to_talk.log
+tail -f $REPO_DIR/push_to_talk.log
 ```
 
 ### Stop the system:
@@ -92,16 +92,16 @@ The system is configured to:
 
 If you prefer the old F5 toggle mode:
 ```bash
-cd /home/ryan/code/voice-to-text-system
+cd $REPO_DIR
 .venv/bin/python src/main.py
 ```
 
 ## 📚 File Locations
 
-- Main script: `/home/ryan/code/voice-to-text-system/start_push_to_talk.py`
-- Push-to-talk handler: `/home/ryan/code/voice-to-text-system/src/push_to_talk_handler.py`
-- Main application: `/home/ryan/code/voice-to-text-system/src/main_push_to_talk.py`
-- Logs: `/home/ryan/code/voice-to-text-system/push_to_talk.log`
+- Main script: `$REPO_DIR/start_push_to_talk.py`
+- Push-to-talk handler: `$REPO_DIR/src/push_to_talk_handler.py`
+- Main application: `$REPO_DIR/src/main_push_to_talk.py`
+- Logs: `$REPO_DIR/push_to_talk.log`
 - Whisper models: `~/.cache/whisper/`
 
 ---

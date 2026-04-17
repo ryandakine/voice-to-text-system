@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-REPO="${VOICE_TYPER_REPO:-/home/ryan/voice-to-text-system}"
+REPO="${VOICE_TYPER_REPO:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
 VENV_PY="${REPO}/.venv/bin/python"
 SCRIPT="${REPO}/voice_typer_whisper.py"
 STATE_DIR="${HOME}/.voice_typer"

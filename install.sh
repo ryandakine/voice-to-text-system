@@ -1,73 +1,119 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Voice-to-Text installer.
+# Idempotent: safe to re-run. Installs system deps, Python venv, config.
 
-# Voice-to-Text System Installer
-# Sets up Python environment, system dependencies, and configuration.
-
-set -e  # Exit on error
+set -euo pipefail
 
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+YELLOW='\033[1;33m'
+NC='\033[0m'
+log()  { echo -e "${GREEN}[install]${NC} $*"; }
+warn() { echo -e "${YELLOW}[install]${NC} $*"; }
 
-echo -e "${GREEN}Starting Voice-to-Text System Installation...${NC}"
+REPO_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+cd "$REPO_DIR"
 
-# 1. Update and Install System Dependencies
-echo "Installing system dependencies..."
-sudo apt-get update
-sudo apt-get install -y \
-    python3-venv \
-    python3-pip \
-    python3-dev \
-    portaudio19-dev \
-    xbindkeys \
-    xdotool \
-    ffmpeg \
-    libgirepository1.0-dev \
-    libcairo2-dev \
+# --- 1. System dependencies -------------------------------------------------
+
+log "Installing system packages (sudo apt)..."
+SYSTEM_DEPS=(
+    python3-venv
+    python3-pip
+    python3-dev
+    portaudio19-dev
+    python3-pyaudio
+    xdotool
+    xclip
+    pulseaudio-utils
+    libgirepository1.0-dev
+    libcairo2-dev
     gir1.2-gtk-3.0
-
-# 2. Setup Python Virtual Environment
-echo "Setting up Python virtual environment..."
-if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
-    echo "Virtual environment created at .venv"
+    ffmpeg
+)
+if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq
+    sudo apt-get install -y "${SYSTEM_DEPS[@]}"
 else
-    echo "Virtual environment already exists."
+    warn "apt-get not found — install these manually: ${SYSTEM_DEPS[*]}"
 fi
 
-# Activate venv
-source .venv/bin/activate
+# --- 2. Python venv ---------------------------------------------------------
 
-# 3. Install Python Packages
-echo "Installing Python requirements..."
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 4. Global Hotkey Setup (xbindkeys)
-echo "Configuring xbindkeys..."
-if [ ! -f ~/.xbindkeysrc ]; then
-    echo "Creating default .xbindkeysrc"
-    xbindkeys --defaults > ~/.xbindkeysrc
+if [[ ! -d .venv ]]; then
+    log "Creating Python venv at .venv/"
+    python3 -m venv .venv
+else
+    log "Python venv already exists at .venv/"
 fi
 
-# Note: The application mainly handles hotkeys via pynput now, 
-# but xbindkeys is still useful for system-level overrides if needed.
+log "Installing Python requirements (this can take a few minutes for faster-whisper + torch)..."
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
 
-# 5. Create Desktop Entry
-echo "Creating desktop shortcut..."
-cat <<EOF > ~/.local/share/applications/voice-to-text.desktop
-[Desktop Entry]
-Name=Voice To Text
-Comment=Universal Voice Typing
-Exec=$(pwd)/start-voice-to-text.sh
-Icon=microphone
-Terminal=false
-Type=Application
-Categories=Utility;Accessibility;
-EOF
+# --- 3. Config files --------------------------------------------------------
 
-chmod +x install.sh
-chmod +x start-voice-to-text.sh
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/voice-to-text"
+CONFIG_FILE="$CONFIG_DIR/config.ini"
+STATE_DIR="$HOME/.voice_typer"
+PROVIDER_FILE="$STATE_DIR/provider.txt"
 
-echo -e "${GREEN}Installation Complete!${NC}"
-echo "You can start the app by running: ./start-voice-to-text.sh"
-echo "Or find 'Voice To Text' in your application menu."
+mkdir -p "$CONFIG_DIR" "$STATE_DIR"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    log "Writing default config to $CONFIG_FILE"
+    cp config.ini.example "$CONFIG_FILE"
+else
+    log "Config already exists at $CONFIG_FILE (leaving untouched)"
+fi
+
+if [[ ! -f "$PROVIDER_FILE" ]]; then
+    echo "whisper" > "$PROVIDER_FILE"
+    log "Set default provider to 'whisper' ($PROVIDER_FILE)"
+else
+    log "Provider already set to '$(cat "$PROVIDER_FILE")' ($PROVIDER_FILE)"
+fi
+
+# --- 4. Render .desktop files with actual paths -----------------------------
+
+APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+mkdir -p "$APPS_DIR"
+
+for tmpl in "$REPO_DIR"/*.desktop; do
+    [[ -e "$tmpl" ]] || continue
+    name=$(basename "$tmpl")
+    dest="$APPS_DIR/$name"
+    sed \
+        -e "s|@REPO_DIR@|$REPO_DIR|g" \
+        -e "s|@HOME@|$HOME|g" \
+        "$tmpl" > "$dest"
+    chmod +x "$dest" 2>/dev/null || true
+done
+log "Installed .desktop files → $APPS_DIR"
+
+# --- 5. Make launchers executable -------------------------------------------
+
+chmod +x install.sh \
+    run_voice_typer.sh \
+    toggle-voice-typer.sh \
+    voice-control.sh \
+    start.sh \
+    start-voice-typer.sh \
+    start-voice-to-text.sh \
+    scripts/remote-mic-client.sh \
+    scripts/remote-mic-server.sh \
+    scripts/remote-mic-teardown.sh 2>/dev/null || true
+
+# --- 6. Done ----------------------------------------------------------------
+
+echo ""
+echo -e "${GREEN}Install complete.${NC}"
+echo ""
+echo "Quick start:"
+echo "  ./run_voice_typer.sh       # start the voice typer"
+echo "  Hold Alt to talk, release to transcribe. F8 to toggle continuous mode."
+echo ""
+echo "Config:    $CONFIG_FILE"
+echo "Provider:  $PROVIDER_FILE (currently: $(cat "$PROVIDER_FILE"))"
+echo ""
+echo "First run will download the faster-whisper small.en model (~250 MB) and"
+echo "Silero VAD (~2 MB). After that, everything runs offline."

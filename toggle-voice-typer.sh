@@ -1,15 +1,16 @@
 #!/bin/bash
-# Toggle Voice Typer on/off - WITH LOCK FILE
+# Toggle Voice Typer on/off — with lock file.
 # Reads provider from ~/.voice_typer/provider.txt to select backend:
-#   "deepgram" → voice_typer_v1.py (Deepgram Nova-2 streaming, low latency)
-#   "granite"  → voice_typer.py    (IBM Granite 4.0 1B local, higher latency)
+#   "whisper"  → voice_typer_whisper.py (faster-whisper + Silero VAD, local, free) [default]
+#   "granite"  → voice_typer.py         (IBM Granite 4.0 1B, local, free)
+#   "deepgram" → voice_typer_v1.py      (Deepgram Nova-2 streaming, cloud, paid)
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOCK_FILE="$SCRIPT_DIR/voice_typer.lock"
 PROVIDER_FILE="$HOME/.voice_typer/provider.txt"
 
-# Read provider (default to deepgram)
-PROVIDER="deepgram"
+# Read provider (default to whisper — local, free, fast).
+PROVIDER="whisper"
 if [ -f "$PROVIDER_FILE" ]; then
     PROVIDER="$(cat "$PROVIDER_FILE" | tr -d '[:space:]')"
 fi

@@ -4,8 +4,8 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/ryan/voice-to-text-system
-ExecStart=/home/ryan/voice-to-text-system/.venv/bin/python /home/ryan/voice-to-text-system/start_push_to_talk_deepgram.py
+WorkingDirectory=@REPO_DIR@
+ExecStart=@REPO_DIR@/.venv/bin/python @REPO_DIR@/start_push_to_talk_deepgram.py
 Restart=on-failure
 RestartSec=2
 

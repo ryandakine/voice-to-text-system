@@ -1,18 +1,23 @@
 #!/bin/bash
-cd /home/ryan/voice-to-text-system
+# Route to the configured voice typer provider.
+REPO_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+cd "$REPO_DIR"
 
 PROVIDER_FILE="$HOME/.voice_typer/provider.txt"
-PROVIDER="deepgram"
+PROVIDER="whisper"
 if [ -f "$PROVIDER_FILE" ]; then
     PROVIDER="$(cat "$PROVIDER_FILE" | tr -d '[:space:]')"
 fi
 
 if [ "$PROVIDER" = "granite" ]; then
     SCRIPT="voice_typer.py"
-elif [ "$PROVIDER" = "whisper" ]; then
-    SCRIPT="voice_typer_whisper.py"
-else
+elif [ "$PROVIDER" = "deepgram" ]; then
     SCRIPT="voice_typer_v1.py"
+else
+    SCRIPT="voice_typer_whisper.py"
 fi
 
-exec /home/ryan/voice-to-text-system/.venv/bin/python -u /home/ryan/voice-to-text-system/$SCRIPT
+PY="${REPO_DIR}/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+
+exec "$PY" -u "${REPO_DIR}/${SCRIPT}"

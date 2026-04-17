@@ -1,0 +1,55 @@
+# Voice-to-Text config. Copy to ~/.config/voice-to-text/config.ini.
+# Lines starting with ; or # are comments.
+
+[General]
+hotkey = F5
+auto_start = true
+show_system_tray = true
+log_level = INFO
+
+[Audio]
+sample_rate = 16000
+channels = 1
+chunk_size = 1024
+format = pyaudio.paInt16
+device_index = -1
+
+[Whisper]
+# Runtime: faster-whisper (CTranslate2). Models auto-download to ~/.cache/whisper.
+# On RTX class GPU, small.en runs near-real-time. Use base.en if you hit OOM,
+# tiny.en on CPU-only setups.
+model = small.en
+language = en
+task = transcribe
+temperature = 0.0
+device = cuda              ; cuda or cpu
+fp16 = true
+
+# Auto-downgrade: if transcription is consistently slow, step to next smaller model.
+# Slow = real-time factor > downgrade_rtf OR wall-clock > downgrade_abs_s.
+# Thresholds are calibrated for faster-whisper (much faster than openai-whisper).
+auto_downgrade = true
+downgrade_rtf = 0.3
+downgrade_abs_s = 1.2
+downgrade_window = 5
+downgrade_trigger = 3
+downgrade_floor = tiny.en
+
+# Silero VAD (replaces RMS thresholds). Timings in milliseconds.
+vad_threshold = 0.2        ; lower = more sensitive; 0.2 is a good daily-driver default
+vad_silence_ms = 448       ; end-of-utterance silence window
+min_speech_ms = 192        ; minimum speech length to transcribe (rejects noise blips)
+max_buffer_ms = 30000      ; max utterance length before forced transcribe
+
+[TextInsertion]
+# keyboard = type characters one at a time (universal but slow for long text)
+# clipboard = copy-paste (fast, but depends on xclip)
+primary_method = keyboard
+fallback_method = clipboard
+delay_before_insert = 0.1
+clear_clipboard_after = true
+
+[GUI]
+status_window_timeout = 3.0
+show_recording_indicator = true
+recording_indicator_color = #ff4444

@@ -35,7 +35,7 @@ EXTRA_SSH_ARGS=("$@")
 
 PULSE_TCP_PORT=4713
 TCP_MODULE_ID=""
-REPO_REMOTE_PATH="${VOICE_TYPER_REPO:-/home/ryan/voice-to-text-system}"
+REPO_REMOTE_PATH="${VOICE_TYPER_REPO:-/home/$USER/voice-to-text-system}"
 
 log() { echo "[remote-mic-client] $*"; }
 

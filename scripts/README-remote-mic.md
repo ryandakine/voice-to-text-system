@@ -19,7 +19,7 @@ Dictate from your laptop/phone microphone and have the text typed on your home b
 
 - SSH access from laptop to home box.
 - `pulseaudio-utils` (for `pactl`) on both machines — already default on most Linux.
-- Voice typer repo cloned at `/home/ryan/voice-to-text-system` on the home box
+- Voice typer repo cloned at `$REPO_DIR` on the home box
   (or set `VOICE_TYPER_REPO` env to the actual path on both machines).
 - Home box's voice typer must be using the `whisper` provider
   (`echo whisper > ~/.voice_typer/provider.txt`).
@@ -68,7 +68,7 @@ ssh -R 127.0.0.1:4713:127.0.0.1:4713 ryan@home
 On the **home box** (inside that SSH session):
 
 ```bash
-/home/ryan/voice-to-text-system/scripts/remote-mic-server.sh 4713
+$REPO_DIR/scripts/remote-mic-server.sh 4713
 ```
 
 ## Gotchas
