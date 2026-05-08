@@ -1,107 +1,107 @@
 # Voice-to-Text for Linux
 
-A system-wide, local-first voice dictation tool for Linux. Hold **Alt** to talk, release to transcribe. Text types into whatever app has focus.
+Local-first voice dictation for Linux. Hold **Alt** to talk, release to transcribe. Text types into whatever app has focus.
 
 Runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2) locally on your GPU or CPU with [Silero VAD](https://github.com/snakers4/silero-vad) for neural silence detection. No cloud, no API keys, no per-minute cost. Cloud (Deepgram) and alternate local (IBM Granite) backends are optional.
 
 <!-- Demo GIF placeholder — record with peek (sudo apt install peek) and drop at docs/demo.gif -->
 
 
-## Why this exists
+## Why
 
-Linux doesn't have a great first-party dictation story. Nerd-dictation, whisper wrappers, cloud-only tools — each has gaps. This project combines:
+Linux has no good first-party dictation story. Nerd-dictation, raw whisper wrappers, cloud-only tools — each has gaps. This one runs entirely on your machine, has no API keys, and is fast enough to type in real time on a mid-range GPU. Designed for devs who SSH/VNC into their workstation and want dictation that doesn't leak audio to a third party.
 
-- **Near-real-time local transcription** (~150-300ms for a 2-second utterance on an RTX GPU — faster than Deepgram streaming in many setups)
-- **No silence hallucinations** (Silero neural VAD, not RMS thresholds)
-- **Smart text insertion** — clipboard paste for long text, keystroke for short, app-aware paste hotkey (Ctrl+Shift+V for terminals)
-- **Auto-downgrade** — when the model can't keep up, the system steps down `small.en → base.en → tiny.en` based on measured real-time factor
-- **Remote-mic mode** — dictate from your laptop microphone into a home workstation over SSH reverse tunnel (great for VNC workflows)
+- ~150-300ms transcription for a 2-second utterance on an RTX GPU
+- Silero neural VAD — no RMS-threshold hallucinations
+- Auto-downgrade `small.en → base.en → tiny.en` when the model can't keep up
+- Smart text insertion: clipboard paste for long text, keystroke for short, Ctrl+Shift+V in terminals
+- Remote-mic mode: dictate from your laptop into a remote box over SSH
 
-## Install
+## Quickstart
 
 ```bash
 git clone https://github.com/ryandakine/voice-to-text-system.git
 cd voice-to-text-system
 ./install.sh
+./run_voice_typer.sh
 ```
 
-What `install.sh` does:
+Then hold **Alt** and speak. Release. Text types into whatever has focus.
 
-1. Installs system deps: `xdotool`, `xclip`, `portaudio19-dev`, `pulseaudio-utils`.
-2. Creates a Python venv in `.venv/` and installs pip requirements.
-3. Copies default config to `~/.config/voice-to-text/config.ini`.
-4. Sets `~/.voice_typer/provider.txt = whisper` (the blessed default).
-5. Renders `.desktop` files with your paths for launchers and tray.
+First run downloads `small.en` (~250 MB) and Silero VAD (~2 MB). After that, fully offline.
+
+`install.sh` installs system deps (`xdotool`, `xclip`, `portaudio19-dev`, `pulseaudio-utils`, `ffmpeg`), creates a venv, writes `~/.config/voice-to-text/config.ini`, and auto-detects GPU (falls back to `base.en` on CPU).
 
 ### Manual install
 
 ```bash
-sudo apt install xdotool xclip portaudio19-dev python3-pyaudio pulseaudio-utils
-
-python3 -m venv .venv
-source .venv/bin/activate
+sudo apt install xdotool xclip portaudio19-dev python3-pyaudio pulseaudio-utils ffmpeg
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
 mkdir -p ~/.config/voice-to-text ~/.voice_typer
 cp config.ini.example ~/.config/voice-to-text/config.ini
 echo whisper > ~/.voice_typer/provider.txt
-
 ./run_voice_typer.sh
 ```
 
 ## Usage
 
-Once running:
+Listening is **on by default**. Speak — text types into the focused app.
 
-### Recommended flow
-
-Listening is **on by default**. Just speak — text types into whatever app has focus. Pause listening when you don't want it picking things up.
-
-### Pausing / resuming
+### Pause / resume
 
 | Want to... | Do this |
 |-----------|---------|
-| Quick pause (phone call, thinking out loud) | Press your **hardware mic mute button**, or **left-click the tray icon** |
-| Resume | Unmute the mic / click the tray again |
-| Hands-free pause | Say **"computer stop listening"** (or "hey computer stop listening") |
-| Resume from voice-pause | **Hold Alt** and say **"computer start listening"**, then release |
+| Quick pause (phone call, thinking) | Hardware mic mute, or left-click the tray icon |
+| Resume | Unmute / click tray |
+| Hands-free pause | Say **"computer stop listening"** |
+| Resume from voice-pause | **Hold Alt** and say **"computer start listening"** |
 
 ### Hotkeys
 
-- **Alt (hold)** — push-to-talk. Audio captured while held; transcribes on release. Useful when you want a guaranteed start/end boundary, or to issue voice commands while listening is paused.
-- **F8** — toggle continuous listening on/off. Note: some Linux keyboards/WMs grab F8 before it reaches the app — if this doesn't work, use the tray icon or a voice command instead.
-- **Esc** — emergency stop listening.
+- **Alt (hold)** — push-to-talk. Captures while held, transcribes on release. Works even when continuous listening is paused.
+- **F8** — toggle continuous listening. Some WMs grab F8 before the app sees it; if so, use the tray or voice command.
+- **Esc** — emergency stop.
 
-### Voice commands (wake phrases: "computer", "hey computer", "ok computer", "okay computer")
+### Voice commands
+
+Wake phrases: `computer`, `hey computer`, `ok computer`, `okay computer`.
 
 - `stop listening` — pause
-- `start listening` — resume (must be spoken while holding Alt since normal capture is paused)
-- `scratch that` / `clear that` / `delete that` — undo last dictation via Ctrl+Z (works in any app with standard undo)
-- `help` / `what can i say` — show command cheatsheet as a desktop notification
+- `start listening` — resume (must be held with Alt since capture is paused)
+- `scratch that` / `clear that` / `delete that` — Ctrl+Z the last dictation
+- `help` / `what can i say` — desktop notification with the cheatsheet
 
 ### Visual feedback
 
-Corner overlay (bottom-right by default, configurable):
+Corner overlay (bottom-right by default):
 
-- **Yellow spinner** — model loading/downloading
-- **Low-alpha green ring** — listening, no active speech
-- **Green pulse** — you're speaking right now
-- **Blue slow pulse** — transcribing (after you stop speaking, before text appears)
-- **Red** — error (paired with a desktop notification)
+- **Yellow spinner** — model loading
+- **Low-alpha green ring** — listening, no speech
+- **Green pulse** — speaking now
+- **Blue slow pulse** — transcribing
+- **Red** — error
 
-Short audio cues play on utterance start/end, successful commands, and errors. Turn off with `audio_cues = false` in config.
+Audio cues play on utterance start/end. Disable with `audio_cues = false` in config.
 
-### Running
+## How it works
 
-Start via the tray icon (`voice_typer_tray.py`), the system-menu shortcut (installed by `install.sh`), or directly:
-
-```bash
-./run_voice_typer.sh
+```
+ [mic] --PyAudio (1024-sample chunks)-->
+        |
+        v
+ [Silero VAD] --speech probability--> [utterance buffer]
+        |                                    |
+        |        (448ms of silence ends utterance)
+        v                                    v
+ [faster-whisper small.en on GPU] --> [text] --> [text_inserter] --> [your app]
+                                                   ├─ clipboard paste (long text)
+                                                   └─ keystroke type (short, fallback)
 ```
 
-## Providers
+Three separable concerns: VAD, transcription, text insertion. Each is pluggable. Entry point: [`voice_typer_whisper.py`](voice_typer_whisper.py).
 
-Switch backends without touching code:
+## Providers
 
 ```bash
 echo whisper  > ~/.voice_typer/provider.txt   # default, local, free
@@ -127,6 +127,7 @@ device = cuda                ; cuda or cpu
 auto_downgrade = true        ; step down model automatically when slow
 vad_threshold = 0.2          ; Silero cutoff — lower = more sensitive
 vad_silence_ms = 448         ; end-of-utterance silence window
+audio_cues = true            ; set to false to silence the listen-start/end beeps
 ```
 
 Full reference in [`config.ini.example`](config.ini.example).
@@ -144,30 +145,20 @@ Reverse SSH tunnel exposes your mic to the remote box and restarts the typer the
 
 See [`scripts/README-remote-mic.md`](scripts/README-remote-mic.md) for architecture and manual fallback.
 
-## How it works
+## Troubleshooting
 
-```
- [mic] --PyAudio (1024-sample chunks)-->
-        |
-        v
- [Silero VAD] --speech probability--> [utterance buffer]
-        |                                    |
-        |        (448ms of silence ends utterance)
-        v                                    v
- [faster-whisper small.en on GPU] --> [text] --> [text_inserter] --> [your app]
-                                                   ├─ clipboard paste (long text)
-                                                   └─ keystroke type (short, fallback)
-```
+**Nothing types when I release Alt.** `xdotool` missing or X11/Wayland permissions. Run `xdotool type "test"` — if that fails, your session can't accept synthetic input. On Wayland, switch to X11 or use the clipboard fallback (`Ctrl+Shift+V` in terminals is wired in).
 
-Three separable concerns: voice activity detection, transcription, text insertion. Each is pluggable. Entry point: [`voice_typer_whisper.py`](voice_typer_whisper.py).
+**CUDA OOM or transcription lags.** Drop `model = base.en` (or `tiny.en`) in `~/.config/voice-to-text/config.ini`. Set `device = cpu` if you don't have a working CUDA install. With `auto_downgrade = true` the typer self-corrects when the real-time factor slips.
+
+**F8 toggle doesn't fire.** Some keyboards/WMs grab F8 before pynput sees it. Use the tray icon left-click, or the `computer stop/start listening` voice commands. Alt push-to-talk always works regardless.
 
 ## System requirements
 
-- Linux (tested on Linux Mint 21+, Ubuntu 22.04+; any modern distro with PulseAudio or PipeWire should work)
+- Linux (tested on Linux Mint 21+, Ubuntu 22.04+; any modern distro with PulseAudio or PipeWire)
 - Python 3.10+
-- Recommended: NVIDIA GPU with 4GB+ VRAM for `small.en` at real-time speeds. CPU-only works with `tiny.en` or `base.en`.
+- NVIDIA GPU with 4GB+ VRAM recommended for `small.en` real-time. CPU works with `tiny.en`/`base.en`.
 - `xdotool` + `xclip` for text insertion
-- PulseAudio or PipeWire for audio capture
 
 ## Testing
 
@@ -175,11 +166,7 @@ Three separable concerns: voice activity detection, transcription, text insertio
 .venv/bin/python -m pytest tests/ -v
 ```
 
-17 unit tests covering VAD frame splitting, transcription mocks, auto-downgrade atomicity, text insertion strategies, and the config loader.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Open issues are tracked in GitHub Issues.
+17 tests covering VAD frame splitting, transcription mocks, auto-downgrade atomicity, text insertion, config loader.
 
 ## License
 
@@ -187,4 +174,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Built on [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2), [Silero VAD](https://github.com/snakers4/silero-vad), [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/), and [pynput](https://pynput.readthedocs.io/). OpenAI Whisper alternate path via [openai/whisper](https://github.com/openai/whisper). Deepgram provider via the official [Deepgram Python SDK](https://github.com/deepgram/deepgram-python-sdk).
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2), [Silero VAD](https://github.com/snakers4/silero-vad), [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/), [pynput](https://pynput.readthedocs.io/). Alternate paths via [openai/whisper](https://github.com/openai/whisper) and the [Deepgram Python SDK](https://github.com/deepgram/deepgram-python-sdk).
