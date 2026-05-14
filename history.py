@@ -49,10 +49,15 @@ class TranscriptEntry:
 class TranscriptHistory:
     """Manages transcript history storage and retrieval."""
 
-    def __init__(self, history_dir: Optional[str] = None):
+    # Keep last N days of daily history files; older files are pruned on init.
+    RETENTION_DAYS = 30
+
+    def __init__(self, history_dir: Optional[str] = None,
+                 retention_days: Optional[int] = None):
         if history_dir is None:
             history_dir = os.path.expanduser("~/.voice_typer/history")
         self.history_dir = Path(history_dir)
+        self.retention_days = retention_days if retention_days is not None else self.RETENTION_DAYS
         self._history_dir_ok = False
         try:
             self.history_dir.mkdir(parents=True, exist_ok=True)
@@ -65,6 +70,42 @@ class TranscriptHistory:
 
         self.current_session: List[TranscriptEntry] = []
         self.max_session_entries = 1000
+
+        # Prune old daily files on startup. Best-effort, never raises.
+        self._prune_old_files()
+
+    def _prune_old_files(self) -> None:
+        """Delete history-YYYY-MM-DD.jsonl files older than retention_days.
+
+        Pruning is based on the date encoded in the filename, not mtime, so
+        it's deterministic even if file timestamps drift. Best-effort: any
+        OSError is logged and skipped.
+        """
+        if not self._history_dir_ok or self.retention_days <= 0:
+            return
+
+        cutoff = datetime.now().date()
+        try:
+            candidates = list(self.history_dir.glob("history-*.jsonl"))
+        except OSError as e:
+            logger.warning("Could not list history dir %s: %s", self.history_dir, e)
+            return
+
+        for path in candidates:
+            # Filename pattern: history-YYYY-MM-DD.jsonl
+            stem = path.stem  # "history-YYYY-MM-DD"
+            try:
+                date_part = stem.split("history-", 1)[1]
+                file_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+            except (IndexError, ValueError):
+                continue  # Not a daily file we recognize; leave it.
+
+            age_days = (cutoff - file_date).days
+            if age_days > self.retention_days:
+                try:
+                    path.unlink()
+                except OSError as e:
+                    logger.warning("Could not prune old history file %s: %s", path, e)
 
     def add(self, text: str, duration_ms: Optional[int] = None,
             confidence: Optional[float] = None) -> None:
