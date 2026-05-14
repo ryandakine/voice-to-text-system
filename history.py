@@ -68,7 +68,13 @@ class TranscriptHistory:
 
     def add(self, text: str, duration_ms: Optional[int] = None,
             confidence: Optional[float] = None) -> None:
-        """Add a transcript to history."""
+        """Add a transcript to history.
+
+        Each utterance is appended immediately to today's JSONL file so a
+        hard crash or OOM kill loses at most one utterance, never the
+        accumulated session. The in-memory list is retained for fast
+        get_recent / search / get_stats.
+        """
         entry = TranscriptEntry(
             text=text,
             timestamp=datetime.now(),
@@ -76,36 +82,49 @@ class TranscriptHistory:
             confidence=confidence,
         )
         self.current_session.append(entry)
+        self._append_entry(entry)
 
-        # Keep only last N entries in memory
+        # Cap in-memory list. Disk already has the entry from _append_entry,
+        # so trimming oldest is safe.
         if len(self.current_session) > self.max_session_entries:
-            self._save_and_clear_session()
+            self.current_session = self.current_session[-self.max_session_entries:]
 
-    def _save_and_clear_session(self) -> None:
-        """Save current session to disk and clear.
+    def _daily_file(self, when: Optional[datetime] = None) -> Path:
+        """Return today's history file path (history-YYYY-MM-DD.jsonl)."""
+        if when is None:
+            when = datetime.now()
+        return self.history_dir / f"history-{when.strftime('%Y-%m-%d')}.jsonl"
 
-        File I/O errors (disk full, read-only mount, permission denied) are
-        logged and swallowed so the dictation flow never crashes. On failure
-        the in-memory session is preserved for the next attempt.
+    def _append_entry(self, entry: TranscriptEntry) -> None:
+        """Append a single entry to today's JSONL file.
+
+        Best-effort: one open/append/close per utterance. JSONL means a
+        partial write only corrupts the last line — every prior utterance
+        on disk is intact. I/O errors are logged and swallowed.
         """
-        if not self.current_session:
-            return
-
         if not self._history_dir_ok:
-            # History dir unwritable; drop to avoid unbounded memory growth.
-            self.current_session.clear()
             return
 
-        filename = self.history_dir / f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        data = [entry.to_dict() for entry in self.current_session]
+        path = self._daily_file()
+        try:
+            line = json.dumps(entry.to_dict())
+        except (TypeError, ValueError) as e:
+            logger.warning("Could not serialize history entry: %s", e)
+            return
 
         try:
-            with open(filename, 'w') as f:
-                json.dump(data, f, indent=2)
-        except (OSError, TypeError, ValueError) as e:
-            logger.warning("Could not write history file %s: %s", filename, e)
-            return
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(line + "\n")
+        except OSError as e:
+            logger.warning("Could not append to history file %s: %s", path, e)
 
+    def _save_and_clear_session(self) -> None:
+        """Flush in-memory session and clear.
+
+        With per-utterance appends in add(), the daily file is already the
+        source of truth on disk; this just clears the in-memory list. Kept
+        for backwards compatibility with callers (e.g. save_session).
+        """
         self.current_session.clear()
 
     def get_recent(self, n: int = 10) -> List[TranscriptEntry]:
