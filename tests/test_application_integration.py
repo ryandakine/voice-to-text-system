@@ -91,5 +91,5 @@ class TestVoiceToTextApp:
         time.sleep(0.2)
         
         mock_services['transcription'].transcribe_audio.assert_called_with("/tmp/test.wav")
-        mock_services['output'].insert_text.assert_called_with("Hello World")
+        mock_services['output'].insert_text.assert_called_with("Hello World", window_id=None)
 

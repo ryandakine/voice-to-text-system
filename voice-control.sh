@@ -1,6 +1,8 @@
 #!/bin/bash
 # Voice-to-Text Control Script
 
+REPO_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
 case "$1" in
     start)
         echo "Starting Voice-to-Text Push-to-Talk system..."
@@ -9,7 +11,7 @@ case "$1" in
         pkill -f "start-voice-to-text.sh" 2>/dev/null
         
         # Start in background
-        nohup /home/ryan/voice-to-text-system/start-voice-to-text.sh > /dev/null 2>&1 &
+        nohup ${REPO_DIR}/start-voice-to-text.sh > /dev/null 2>&1 &
         echo "Voice-to-Text system started in background (PID: $!)"
         echo "Hold Alt key to record, release to transcribe."
         ;;
@@ -39,19 +41,19 @@ case "$1" in
         ;;
         
     logs)
-        LOG_FILE="/home/ryan/voice-to-text-system/logs/voice-to-text-$(date +%Y%m%d).log"
+        LOG_FILE="${REPO_DIR}/logs/voice-to-text-$(date +%Y%m%d).log"
         if [ -f "$LOG_FILE" ]; then
             echo "Showing recent logs from $LOG_FILE:"
             tail -n 50 "$LOG_FILE"
         else
             echo "No log file found for today. Checking push_to_talk.log..."
-            tail -n 50 /home/ryan/voice-to-text-system/push_to_talk.log 2>/dev/null || echo "No logs available"
+            tail -n 50 ${REPO_DIR}/push_to_talk.log 2>/dev/null || echo "No logs available"
         fi
         ;;
         
     test)
         echo "Testing Voice-to-Text system (will run in foreground, press Ctrl+C to stop)..."
-        cd /home/ryan/voice-to-text-system
+        cd ${REPO_DIR}
         .venv/bin/python start_push_to_talk.py
         ;;
         

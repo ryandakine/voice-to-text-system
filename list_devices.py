@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
 
-# Add project root to path
-sys.path.append('/home/ryan/voice-to-text-system')
+# Add project root to path so `src.utils.audio_utils` resolves regardless of cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.utils.audio_utils import audio_manager
 

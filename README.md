@@ -1,433 +1,177 @@
-# Voice-to-Text System for Linux Mint
+# Voice-to-Text for Linux
 
-A system-wide voice-to-text application for Linux Mint that provides universal speech recognition with global hotkey support (F5). The system integrates with existing speech recognition components and provides seamless text insertion across all applications.
+Local-first voice dictation for Linux. Hold **Alt** to talk, release to transcribe. Text types into whatever app has focus.
 
-## Demo
+Runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2) locally on your GPU or CPU with [Silero VAD](https://github.com/snakers4/silero-vad) for neural silence detection. No cloud, no API keys, no per-minute cost. Cloud (Deepgram) and alternate local (IBM Granite) backends are optional.
 
-![Voice Typer Demo](demo.gif)
+<!-- Demo GIF placeholder — record with peek (sudo apt install peek) and drop at docs/demo.gif -->
 
-*Record a demo: Install `peek` (`sudo apt install peek`), record 10-15 seconds of using the voice typer, and replace `demo.gif` with your recording.*
 
-## Features
+## Why
 
-- **Real-time Streaming** (Recommended): Deepgram Nova-2 for instant voice-to-text
-- **Global Hotkey**: Press F5 anywhere to start voice recording (Whisper mode)
-- **Universal Text Insertion**: Works in browsers, text editors, terminals, and forms
-- **Whisper Integration**: Uses OpenAI's Whisper for high-quality local speech recognition
-- **System Tray Integration**: Easy access to settings and status
-- **Auto-start Support**: Configure to start automatically with your system
-- **Privacy-Focused**: Whisper mode processes locally; Deepgram mode uses cloud API
-- **Health Integration**: Connect with Samsung Health and Whoop for health-aware responses
-- **Real-time Monitoring**: Continuous health data sync and alert system
-- **Emergency Protocols**: Automated emergency response with health monitoring
+Linux has no good first-party dictation story. Nerd-dictation, raw whisper wrappers, cloud-only tools — each has gaps. This one runs entirely on your machine, has no API keys, and is fast enough to type in real time on a mid-range GPU. Designed for devs who SSH/VNC into their workstation and want dictation that doesn't leak audio to a third party.
 
-> [!WARNING]
-> **Compatibility Warning**: The **Deepgram Voice Typer** and **Whisper Mode** cannot be run simultaneously. 
-> 
-> If both systems are active at the same time:
-> 1. You will experience "Double Talk" (duplicate text insertion).
-> 2. The Whisper hotkey (F5) and Deepgram toggle logic (F8/Alt) may conflict.
-> 3. Audio resources may be locked, causing one or both systems to fail.
-> 
-> **Recommendation**: Always ensure the Deepgram Voice Typer is stopped (`./toggle-voice-typer.sh`) before launching Whisper Mode (`python3 src/main.py`), and vice versa.
+- ~150-300ms transcription for a 2-second utterance on an RTX GPU
+- Silero neural VAD — no RMS-threshold hallucinations
+- Auto-downgrade `small.en → base.en → tiny.en` when the model can't keep up
+- Smart text insertion: clipboard paste for long text, keystroke for short, Ctrl+Shift+V in terminals
+- Remote-mic mode: dictate from your laptop into a remote box over SSH
 
-## System Requirements
-
-- **OS**: Linux Mint 21.x or Ubuntu 22.04+
-- **Python**: 3.8 or higher
-- **Audio**: Working microphone input
-- **Memory**: At least 2GB RAM (4GB+ recommended)
-- **Storage**: 1GB free space for Whisper models
-
-## Quick Start - Deepgram Voice Typer (Recommended)
-
-The fastest way to get real-time voice-to-text working:
-
-1. **Clone and setup**:
-   ```bash
-   git clone https://github.com/ryandakine/voice-to-text-system.git
-   cd voice-to-text-system
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. **Get a Deepgram API key** (free tier available):
-   - Sign up at https://deepgram.com
-   - Create an API key in the console
-
-3. **Configure your API key**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your DEEPGRAM_API_KEY
-   ```
-
-4. **Install system dependencies**:
-   ```bash
-   sudo apt install -y xdotool python3-pyaudio portaudio19-dev
-   ```
-
-5. **Run the voice typer**:
-   ```bash
-   ./toggle-voice-typer.sh
-   ```
-
-### Deepgram Voice Typer Controls
-
-- **F8**: Toggle listening on/off (pause/resume)
-- **F9**: Toggle OpenClaw AI mode (voice commands to GLM-5)
-- Run `./toggle-voice-typer.sh` again to stop
-
-### Desktop Shortcut
-
-Copy `toggle-voice-typer.desktop` to `~/.local/share/applications/` and bind to a keyboard shortcut for quick toggle.
-
----
-
-## Alternative: Whisper Mode (Local/Offline)
-
-If you prefer fully local processing without cloud API:
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/ryandakine/voice-to-text-system.git
-   cd voice-to-text-system
-   ```
-
-2. **Run the installation script**:
-   ```bash
-   chmod +x install.sh
-   ./install.sh
-   ```
-
-3. **Start the system**:
-   ```bash
-   # Start with GUI Manager
-   python3 src/main.py
-
-   # Or run in background with hotkey (F5)
-   python3 src/main.py --mode hotkey
-
-   # Or run in Push-to-Talk mode (Alt key)
-   python3 src/main.py --mode ptt
-   ```
-
-## Manual Installation
-
-If you prefer to install manually or the automated script doesn't work:
-
-### 1. Install System Dependencies
+## Quickstart
 
 ```bash
-sudo apt update
-sudo apt install -y xbindkeys xdotool xclip python3-pip python3-pyaudio
-sudo apt install -y libportaudio2 portaudio19-dev libasound2-dev
-sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0
-sudo apt install -y build-essential pkg-config pulseaudio-utils
+git clone https://github.com/ryandakine/voice-to-text-system.git
+cd voice-to-text-system
+./install.sh
+./run_voice_typer.sh
 ```
 
-### 2. Install Python Dependencies
+Then hold **Alt** and speak. Release. Text types into whatever has focus.
+
+First run downloads `small.en` (~250 MB) and Silero VAD (~2 MB). After that, fully offline.
+
+`install.sh` installs system deps (`xdotool`, `xclip`, `portaudio19-dev`, `pulseaudio-utils`, `ffmpeg`), creates a venv, writes `~/.config/voice-to-text/config.ini`, and auto-detects GPU (falls back to `base.en` on CPU).
+
+### Manual install
 
 ```bash
-python3 -m pip install --user SpeechRecognition pyaudio openai-whisper
-python3 -m pip install --user PyGObject pynput keyboard psutil
-python3 -m pip install --user numpy soundfile librosa
-python3 -m pip install --user python-xlib pyautogui pyperclip
-```
-
-### 3. Create Configuration Directories
-
-```bash
-mkdir -p ~/.config/voice-to-text
-mkdir -p ~/.local/share/voice-to-text/logs
-mkdir -p ~/.cache/whisper
-```
-
-### 4. Configure xbindkeys
-
-Create `~/.xbindkeysrc`:
-```
-# Voice-to-Text System Configuration
-"/path/to/voice-to-text-system/scripts/hotkey_trigger.sh"
-    F5
+sudo apt install xdotool xclip portaudio19-dev python3-pyaudio pulseaudio-utils ffmpeg
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+mkdir -p ~/.config/voice-to-text ~/.voice_typer
+cp config.ini.example ~/.config/voice-to-text/config.ini
+echo whisper > ~/.voice_typer/provider.txt
+./run_voice_typer.sh
 ```
 
 ## Usage
 
-### Basic Usage
+Listening is **on by default**. Speak — text types into the focused app.
 
-1. **Start the system**:
-   ```bash
-   python3 src/main.py
-   ```
+### Pause / resume
 
-2. **Press F5** anywhere to start voice recording
-3. **Speak** your text clearly
-4. **Press F5 again** to stop recording and insert text
+| Want to... | Do this |
+|-----------|---------|
+| Quick pause (phone call, thinking) | Hardware mic mute, or left-click the tray icon |
+| Resume | Unmute / click tray |
+| Hands-free pause | Say **"computer stop listening"** |
+| Resume from voice-pause | **Hold Alt** and say **"computer start listening"** |
 
-### Advanced Usage
+### Hotkeys
 
-#### Enable Auto-start
+- **Alt (hold)** — push-to-talk. Captures while held, transcribes on release. Works even when continuous listening is paused.
+- **F8** — toggle continuous listening. Some WMs grab F8 before the app sees it; if so, use the tray or voice command.
+- **Esc** — emergency stop.
+
+### Voice commands
+
+Wake phrases: `computer`, `hey computer`, `ok computer`, `okay computer`.
+
+- `stop listening` — pause
+- `start listening` — resume (must be held with Alt since capture is paused)
+- `scratch that` / `clear that` / `delete that` — Ctrl+Z the last dictation
+- `help` / `what can i say` — desktop notification with the cheatsheet
+
+### Visual feedback
+
+Corner overlay (bottom-right by default):
+
+- **Yellow spinner** — model loading
+- **Low-alpha green ring** — listening, no speech
+- **Green pulse** — speaking now
+- **Blue slow pulse** — transcribing
+- **Red** — error
+
+Audio cues play on utterance start/end. Disable with `audio_cues = false` in config.
+
+## How it works
+
+```
+ [mic] --PyAudio (1024-sample chunks)-->
+        |
+        v
+ [Silero VAD] --speech probability--> [utterance buffer]
+        |                                    |
+        |        (448ms of silence ends utterance)
+        v                                    v
+ [faster-whisper small.en on GPU] --> [text] --> [text_inserter] --> [your app]
+                                                   ├─ clipboard paste (long text)
+                                                   └─ keystroke type (short, fallback)
+```
+
+Three separable concerns: VAD, transcription, text insertion. Each is pluggable. Entry point: [`voice_typer_whisper.py`](voice_typer_whisper.py).
+
+## Providers
 
 ```bash
-# Enable the systemd service
-systemctl --user enable voice-to-text.service
-
-# Start the service
-systemctl --user start voice-to-text.service
+echo whisper  > ~/.voice_typer/provider.txt   # default, local, free
+echo granite  > ~/.voice_typer/provider.txt   # IBM Granite 4.0 1B, local, free
+echo deepgram > ~/.voice_typer/provider.txt   # Deepgram Nova-2, cloud, needs DEEPGRAM_API_KEY
+./toggle-voice-typer.sh
 ```
 
-#### Customize Hotkey
-
-Edit `~/.config/voice-to-text/config.ini`:
-```ini
-[General]
-hotkey = F5
-```
-
-#### Change Whisper Model
-
-Edit the configuration file:
-```ini
-[Whisper]
-model = base  # Options: tiny, base, small, medium, large
-```
+| Provider   | Runtime                          | Latency    | Cost        | Offline |
+|------------|----------------------------------|------------|-------------|---------|
+| `whisper`  | faster-whisper + Silero VAD      | ~200-400ms | Free        | Yes     |
+| `granite`  | IBM Granite 4.0 1B Speech        | ~600ms     | Free        | Yes     |
+| `deepgram` | Nova-2 WebSocket streaming       | ~200-300ms | ~$0.004/min | No      |
 
 ## Configuration
 
-The system configuration is stored in `~/.config/voice-to-text/config.ini`. Key settings:
+Edit `~/.config/voice-to-text/config.ini`. Key Whisper settings:
 
-### General Settings
-- `hotkey`: Global hotkey (default: F5)
-- `auto_start`: Enable auto-start (default: true)
-- `show_system_tray`: Show system tray icon (default: true)
+```ini
+[Whisper]
+model = small.en             ; sweet spot; use base.en if OOM, tiny.en on CPU
+device = cuda                ; cuda or cpu
+auto_downgrade = true        ; step down model automatically when slow
+vad_threshold = 0.2          ; Silero cutoff — lower = more sensitive
+vad_silence_ms = 448         ; end-of-utterance silence window
+audio_cues = true            ; set to false to silence the listen-start/end beeps
+```
 
-### Audio Settings
-- `sample_rate`: Audio sample rate (default: 16000)
-- `channels`: Number of audio channels (default: 1)
-- `device_index`: Audio device index (-1 for default)
+Full reference in [`config.ini.example`](config.ini.example).
 
-### Whisper Settings
-- `model`: Whisper model size (tiny/base/small/medium/large)
-- `language`: Language for transcription (auto for auto-detection)
-- `task`: Task type (transcribe/translate)
+## Remote-mic over SSH
 
-### Text Insertion Settings
-- `primary_method`: Primary insertion method (clipboard/keyboard/xdotool)
-- `fallback_method`: Fallback insertion method
-- `delay_before_insert`: Delay before text insertion (seconds)
+SSH'd or VNC'd into a remote Linux box and want to dictate from your laptop's mic:
+
+```bash
+# On your laptop:
+./scripts/remote-mic-client.sh ryan@remote.host
+```
+
+Reverse SSH tunnel exposes your mic to the remote box and restarts the typer there pointing at it. `Ctrl+C` when done. Teardown on the remote: `./scripts/remote-mic-teardown.sh`.
+
+See [`scripts/README-remote-mic.md`](scripts/README-remote-mic.md) for architecture and manual fallback.
 
 ## Troubleshooting
 
-### Common Issues
+**Nothing types when I release Alt.** `xdotool` missing or X11/Wayland permissions. Run `xdotool type "test"` — if that fails, your session can't accept synthetic input. On Wayland, switch to X11 or use the clipboard fallback (`Ctrl+Shift+V` in terminals is wired in).
 
-#### 1. "No module named 'pyaudio'" Error
+**CUDA OOM or transcription lags.** Drop `model = base.en` (or `tiny.en`) in `~/.config/voice-to-text/config.ini`. Set `device = cpu` if you don't have a working CUDA install. With `auto_downgrade = true` the typer self-corrects when the real-time factor slips.
 
-Install PortAudio development libraries:
-```bash
-sudo apt install -y portaudio19-dev python3-pyaudio
-```
+**F8 toggle doesn't fire.** Some keyboards/WMs grab F8 before pynput sees it. Use the tray icon left-click, or the `computer stop/start listening` voice commands. Alt push-to-talk always works regardless.
 
-#### 2. Microphone Not Working
+## System requirements
 
-Check microphone permissions and settings:
-```bash
-# Check audio devices
-python3 -c "import pyaudio; p = pyaudio.PyAudio(); print('Devices:', p.get_device_count())"
+- Linux (tested on Linux Mint 21+, Ubuntu 22.04+; any modern distro with PulseAudio or PipeWire)
+- Python 3.10+
+- NVIDIA GPU with 4GB+ VRAM recommended for `small.en` real-time. CPU works with `tiny.en`/`base.en`.
+- `xdotool` + `xclip` for text insertion
 
-# Test microphone
-python3 -c "import pyaudio; p = pyaudio.PyAudio(); print('Default input:', p.get_default_input_device_info())"
-```
-
-#### 3. Hotkey Not Working
-
-Check xbindkeys configuration:
-```bash
-# Test xbindkeys
-xbindkeys -n
-
-# Check if xbindkeys is running
-ps aux | grep xbindkeys
-```
-
-#### 4. Text Not Inserting
-
-Test text insertion methods:
-```bash
-python3 -c "
-from src.text_insertion import text_inserter
-print('Testing insertion methods...')
-results = text_inserter.test_insertion_methods()
-print('Results:', results)
-"
-```
-
-### Logs
-
-Check application logs for detailed error information:
-```bash
-tail -f ~/.local/share/voice-to-text/logs/voice-to-text-$(date +%Y%m%d).log
-```
-
-### Performance Issues
-
-1. **Use a smaller Whisper model** (tiny or base instead of large)
-2. **Close other applications** to free up memory
-3. **Check CPU usage** during processing
-4. **Ensure adequate free disk space** for model caching
-
-## Development
-
-### Project Structure
-
-```
-voice-to-text-system/
-├── src/                    # Source code
-│   ├── main.py            # Main application
-│   ├── voice_recorder.py  # Audio recording
-│   ├── speech_processor.py # Whisper integration
-│   ├── text_insertion.py  # Text insertion
-│   ├── hotkey_handler.py  # Global hotkey
-│   ├── gui/               # GUI components
-│   └── utils/             # Utilities
-├── scripts/               # Installation scripts
-├── config/               # Configuration files
-├── systemd/              # System service files
-└── docs/                 # Documentation
-```
-
-### Running Tests
+## Testing
 
 ```bash
-# Test audio system
-python3 -c "from src.utils.audio_utils import audio_manager; print('Audio devices:', audio_manager.get_audio_devices())"
-
-# Test Whisper
-python3 -c "from src.speech_processor import speech_processor; print('Model info:', speech_processor.get_model_info())"
-
-# Test text insertion
-python3 -c "from src.text_insertion import text_inserter; print('Test results:', text_inserter.test_insertion_methods())"
+.venv/bin/python -m pytest tests/ -v
 ```
 
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+17 tests covering VAD frame splitting, transcription mocks, auto-downgrade atomicity, text insertion, config loader.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see [LICENSE](LICENSE).
 
-## Acknowledgments
+## Credits
 
-- [OpenAI Whisper](https://github.com/openai/whisper) for speech recognition
-- [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/) for audio processing
-- [xbindkeys](http://www.nongnu.org/xbindkeys/) for global hotkey support
-
-## Support
-
-For issues and questions:
-
-1. Check the troubleshooting section above
-2. Review the logs in `~/.local/share/voice-to-text/logs/`
-3. Open an issue on the project repository
-4. Check the documentation in the `docs/` directory
-
-## Health Integration (NEW)
-
-The voice-to-text system now includes comprehensive health monitoring capabilities:
-
-### Setup Health Integration
-
-1. **Install Health Dependencies**:
-   ```bash
-   pip install cryptography keyring requests
-   cd src/health_integration
-   npm install
-   ```
-
-2. **Configure Samsung Health** (Optional):
-   ```python
-   from src.health_integration import HealthMonitor
-
-   monitor = HealthMonitor()
-   monitor.configure_service("samsung_health", {
-       "client_id": "your_client_id",
-       "client_secret": "your_client_secret",
-       "redirect_uri": "http://localhost:8080/callback/samsung"
-   })
-   ```
-
-3. **Configure Whoop** (Optional):
-   ```python
-   monitor.configure_service("whoop", {
-       "client_id": "your_client_id",
-       "client_secret": "your_client_secret",
-       "redirect_uri": "http://localhost:8080/callback/whoop"
-   })
-   ```
-
-### Health-Aware Features
-
-- **Smart Responses**: Voice responses adapt based on your health state
-- **Real-time Alerts**: Automatic notifications for health concerns
-- **Emergency Protocols**: Automated emergency response system
-- **Personalized Tips**: Health recommendations based on your data
-- **Voice Modifications**: Speech parameters adjust for health conditions
-
-### Example Usage
-
-```python
-# Initialize health monitoring
-monitor = HealthMonitor()
-monitor.start_monitoring()
-
-# Get health-aware response
-user_input = "How am I feeling?"
-response = monitor.get_health_aware_response(user_input)
-print(response)  # Provides health status summary
-
-# Get personalized health tips
-tips = monitor.get_health_tips()
-for tip in tips:
-    print(f"💡 {tip}")
-```
-
-See `src/health_integration/README.md` for detailed documentation and `src/health_integration_example.py` for a complete integration example.
-
-## Changelog
-
-### Version 1.3.0 (OpenClaw Integration)
-- Replaced CIMCO AI mode with OpenClaw integration
-- F9 now toggles OpenClaw mode for voice-to-AI commands
-- Voice commands sent to GLM-5 via OpenClaw gateway
-- TTS responses via Deepgram Aura
-
-### Version 1.2.0 (Deepgram Real-time Streaming)
-- Added Deepgram Nova-2 real-time voice typer
-- Faster endpointing (200ms) for responsive transcription
-- Auto-reconnect on stale connections
-- Keepalive pings to maintain connection health
-- F8 toggle for pause/resume listening
-- Background operation via toggle script
-- Desktop notification support
-
-### Version 1.1.0 (Health Integration)
-- Added comprehensive health monitoring system
-- Samsung Health and Whoop API integrations
-- Health-aware voice responses
-- Real-time health data synchronization
-- Emergency alert and response system
-- Secure encrypted data storage
-- Customizable health alerts and thresholds
-
-### Version 1.0.0
-- Initial release
-- Global F5 hotkey support
-- Whisper integration
-- Universal text insertion
-- System tray integration
-- Auto-start capability
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2), [Silero VAD](https://github.com/snakers4/silero-vad), [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/), [pynput](https://pynput.readthedocs.io/). Alternate paths via [openai/whisper](https://github.com/openai/whisper) and the [Deepgram Python SDK](https://github.com/deepgram/deepgram-python-sdk).
