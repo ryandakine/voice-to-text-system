@@ -99,6 +99,31 @@ class SpeechProcessor(TranscriptionService):
             logger.error(f"Transcription failed: {e}")
             return None
     
+    def transcribe_bytes(self, audio_bytes: bytes, sample_rate: int = 16000) -> Optional[str]:
+        """Transcribe raw PCM int16 bytes directly (no temp file needed)."""
+        if not self.model:
+            if not self.load_model():
+                return None
+
+        import numpy as np
+        audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        if audio_np.size == 0:
+            return None
+
+        try:
+            result = self.model.transcribe(
+                audio_np,
+                language=self.language if self.language != 'auto' else None,
+                task=self.task,
+                temperature=self.temperature,
+                fp16=self.fp16,
+            )
+            text = result.get('text', '').strip()
+            return text if text else None
+        except Exception as e:
+            logger.error(f"transcribe_bytes failed: {e}")
+            return None
+
     def transcribe_with_options(self, audio_file: str, options: Dict[str, Any]) -> Optional[str]:
         """Transcribe audio with custom options."""
         if not self.model:
