@@ -166,7 +166,7 @@ See [`scripts/README-remote-mic.md`](scripts/README-remote-mic.md) for architect
 .venv/bin/python -m pytest tests/ -v
 ```
 
-17 tests covering VAD frame splitting, transcription mocks, auto-downgrade atomicity, text insertion, config loader.
+47 tests covering the whisper typer (auto-downgrade, Silero reset, text-inserter delegation), partial-transcript buffering, overlay signals, voice-command integration, application integration, history, config loader, and text insertion.
 
 ## License
 
