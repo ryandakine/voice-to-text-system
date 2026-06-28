@@ -64,6 +64,35 @@ SILERO_FRAME_SAMPLES = 512               # Silero requires exactly 512 samples a
 FRAME_MS = SILERO_FRAME_SAMPLES * 1000 / SAMPLE_RATE  # 32.0 ms per Silero frame
 
 
+# --- Silent-capture guard (muted / dead-mic detection) ----------------------
+# A sustained push-to-talk press that captures near-zero audio means the mic is
+# muted (e.g. the CMTECK physical mute button, invisible to the OS mixer) or the
+# default input drifted to a dead device (e.g. a connected Bluetooth headset mic).
+# Without this guard Whisper hallucinates "You" / "Thank you." on the silence and
+# types it. We detect the silence and notify the user instead. One check covers
+# both failure modes — it keys on the symptom (no audio), not the cause.
+SILENCE_RMS_THRESHOLD = 25       # int16 RMS below this = effectively silent (a muted mic reads ~0)
+SILENCE_MIN_DURATION_S = 1.0     # ignore short / accidental Alt taps
+
+
+def is_silent_capture(
+    audio_bytes: bytes,
+    sample_rate: int = SAMPLE_RATE,
+    rms_threshold: float = SILENCE_RMS_THRESHOLD,
+    min_duration_s: float = SILENCE_MIN_DURATION_S,
+) -> bool:
+    """True when audio is long enough to be a real speech attempt but essentially
+    silent — the signature of a muted or dead microphone."""
+    n_samples = len(audio_bytes) // 2          # int16 = 2 bytes/sample; ignore a trailing odd byte
+    if n_samples == 0:
+        return False
+    if n_samples / sample_rate < min_duration_s:
+        return False                            # too short to judge (e.g. an accidental Alt tap)
+    audio_np = np.frombuffer(audio_bytes[: n_samples * 2], dtype=np.int16)
+    rms = float(np.sqrt(np.mean(audio_np.astype(np.float32) ** 2)))
+    return rms < rms_threshold
+
+
 class SileroVAD:
     """Thread-safe wrapper around Silero neural VAD. Warm-up on load."""
 
@@ -623,6 +652,17 @@ class VoiceTyperWhisper:
             logging.debug("Transcription in progress, dropping utterance.")
             return
         try:
+            # Silent-capture guard: a sustained press with no audio = muted/dead mic.
+            # Notify instead of letting Whisper hallucinate "You" on the silence.
+            if is_silent_capture(audio_bytes):
+                dur = len(audio_bytes) / 2 / SAMPLE_RATE
+                logging.warning(
+                    "Silent capture (%.1fs, RMS < %d) — mic likely muted/dead; "
+                    "skipping transcription.", dur, SILENCE_RMS_THRESHOLD,
+                )
+                self._warn_mic_silent()
+                return
+
             text = self._transcriber.transcribe(audio_bytes)
             if not text:
                 return
@@ -658,6 +698,26 @@ class VoiceTyperWhisper:
                 self._overlay.set_state(OverlayState.IDLE)
         finally:
             self._transcribe_lock.release()
+
+    def _warn_mic_silent(self):
+        """Notify that the mic captured silence (likely muted/dead) instead of
+        silently typing a Whisper hallucination. Routes to notify-send, never types."""
+        try:
+            subprocess.run(
+                ["notify-send", "-u", "critical", "-t", "8000",
+                 "-i", "microphone-sensitivity-muted",
+                 "Voice Typer — no audio",
+                 "Mic captured silence — is it muted? "
+                 "Check the physical mute button or your input device."],
+                timeout=5,
+            )
+        except Exception as exc:
+            logging.error("mic-silent notify failed: %s", exc)
+        if self._overlay is not None:
+            try:
+                self._overlay.set_state(OverlayState.IDLE)
+            except Exception:
+                pass
 
     # ---------- Voice command handlers (Change 1) ----------
 
