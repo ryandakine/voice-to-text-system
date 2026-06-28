@@ -132,3 +132,26 @@ def test_start_listening_command_works_when_listening_is_off():
     vt._transcribe_and_type(b"fakeaudio")
 
     assert vt._listening_flag.is_set(), "start-listening command must resume listening even from paused"
+
+
+# ---------- default-OFF + PTT bypass (privacy: no ambient typing) ----------
+
+def test_default_listening_is_off():
+    """Startup default must be OFF so always-on transcription can't leak ambient
+    speech (e.g. a phone call) onto the screen until the user explicitly enables it."""
+    vt = _make_typer()
+    assert not vt._listening_flag.is_set()
+
+
+def test_ptt_types_even_when_listening_off():
+    """Alt push-to-talk (is_ptt=True) must bypass the listening gate so a deliberate
+    hold-to-talk still types while continuous listening is OFF (the new default)."""
+    vt = _make_typer()
+    fake_inserter = MagicMock()
+    vt._text_inserter = fake_inserter
+    vt._listening_flag.clear()  # OFF
+    vt._transcriber.transcribe = MagicMock(return_value="hello world")
+
+    vt._transcribe_and_type(b"fakeaudio", is_ptt=True)
+
+    fake_inserter.insert_text.assert_called_once_with("hello world ")

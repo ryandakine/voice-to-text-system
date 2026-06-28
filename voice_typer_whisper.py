@@ -488,7 +488,11 @@ class VoiceTyperWhisper:
 
         self._stop_event = threading.Event()
         self._listening_flag = threading.Event()
-        self._listening_flag.set()  # start with continuous listening ON
+        # Default OFF: don't transcribe ambient speech on startup. The user turns
+        # dictation ON explicitly (tray-icon click -> SIGUSR1), so forgetting can't
+        # leak private talk (e.g. a phone call) onto the screen. Alt push-to-talk
+        # still works while OFF — see the is_ptt bypass in _transcribe_and_type.
+        # (listening_flag stays cleared = OFF)
         self._ptt_active = False
 
         self._transcribe_lock = threading.Lock()
@@ -647,7 +651,7 @@ class VoiceTyperWhisper:
                     daemon=True,
                 ).start()
 
-    def _transcribe_and_type(self, audio_bytes: bytes):
+    def _transcribe_and_type(self, audio_bytes: bytes, is_ptt: bool = False):
         if not self._transcribe_lock.acquire(blocking=False):
             logging.debug("Transcription in progress, dropping utterance.")
             return
@@ -676,7 +680,10 @@ class VoiceTyperWhisper:
 
             # After commands, only normal typing is gated by the listening flag.
             # H2 race guard: listening may have been cleared mid-transcribe.
-            if not self._listening_flag.is_set():
+            if not is_ptt and not self._listening_flag.is_set():
+                # Continuous (always-listening) typing is gated by the flag, which is
+                # OFF by default. Alt push-to-talk (is_ptt=True) bypasses this so a
+                # deliberate hold-to-talk always types, even when listening is off.
                 logging.debug("Listening disabled after transcribe, dropping.")
                 return
 
@@ -800,7 +807,7 @@ class VoiceTyperWhisper:
             if audio_bytes:
                 threading.Thread(
                     target=self._transcribe_and_type,
-                    args=(audio_bytes,),
+                    args=(audio_bytes, True),   # is_ptt=True: Alt PTT types even when listening is OFF
                     daemon=True,
                 ).start()
 

@@ -23,7 +23,7 @@ except ImportError:
     from PIL import Image, ImageDraw
 
 # Global state
-current_status = "ON"
+current_status = "OFF"  # default OFF until the whisper process reports otherwise
 last_restart_time = 0
 RESTART_COOLDOWN = 10  # seconds between restart attempts
 
