@@ -180,6 +180,8 @@ class WhisperTranscriber:
 
         self._language = "en"
         self._temperature = 0.0
+        self._beam_size = 1
+        self._initial_prompt: Optional[str] = None
 
         config_path = os.path.expanduser("~/.config/voice-to-text/config.ini")
         if os.path.exists(config_path):
@@ -197,6 +199,9 @@ class WhisperTranscriber:
                 self._downgrade_window = cfg.getint("Whisper", "downgrade_window", fallback=5)
                 self._downgrade_trigger = cfg.getint("Whisper", "downgrade_trigger", fallback=3)
                 self._downgrade_floor = cfg.get("Whisper", "downgrade_floor", fallback="tiny.en")
+                self._beam_size = cfg.getint("Whisper", "beam_size", fallback=1)
+                prompt = cfg.get("Whisper", "initial_prompt", fallback="").strip()
+                self._initial_prompt = prompt or None
 
         self._latency_samples: deque = deque(maxlen=self._downgrade_window)
         threading.Thread(target=self._load, daemon=True, name="whisper-loader").start()
@@ -272,11 +277,12 @@ class WhisperTranscriber:
                 segments, _info = self._model.transcribe(
                     audio_np,
                     language=lang,
-                    beam_size=1,
+                    beam_size=self._beam_size,
                     vad_filter=False,
                     condition_on_previous_text=False,
                     no_speech_threshold=0.6,
                     temperature=self._temperature,
+                    initial_prompt=self._initial_prompt,
                 )
                 text = " ".join(s.text for s in segments).strip()
             self._record_latency(time.monotonic() - t0, audio_duration)
@@ -289,7 +295,12 @@ class WhisperTranscriber:
         if not self._auto_downgrade or audio_duration <= 0:
             return
         rtf = elapsed / audio_duration
-        is_slow = rtf > self._downgrade_rtf or elapsed > self._downgrade_abs_s
+        # The absolute wall-clock threshold only means "slow" for short utterances. A 30s
+        # dictation cannot transcribe in 1.2s at any model size, so applying it unconditionally
+        # marked every long utterance slow and walked the model down toward the floor, where it
+        # stayed. Long audio is judged on real-time factor alone.
+        short_utterance = audio_duration <= self._downgrade_abs_s / max(self._downgrade_rtf, 0.01)
+        is_slow = rtf > self._downgrade_rtf or (short_utterance and elapsed > self._downgrade_abs_s)
         self._latency_samples.append(is_slow)
         logging.debug("whisper latency=%.2fs audio=%.2fs rtf=%.2f slow=%s",
                       elapsed, audio_duration, rtf, is_slow)
