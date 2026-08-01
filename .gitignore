@@ -44,3 +44,5 @@ build/
 dist/
 *.spec
 .pytest_cache/
+.claude/
+.env.bak*

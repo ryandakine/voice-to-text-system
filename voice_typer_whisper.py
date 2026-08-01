@@ -431,6 +431,29 @@ class MicrophoneStreamer:
             self._thread.join(timeout=2.0)
 
 
+def _init_history(config_path: str = "~/.voice_typer/config.json"):
+    """Config-gated HistoryManager for dictation capture; None when disabled or unavailable.
+
+    Must never raise: history is a nice-to-have and the typer must start without it."""
+    try:
+        import json
+        cfg = {}
+        path = os.path.expanduser(config_path)
+        if os.path.exists(path):
+            with open(path) as f:
+                cfg = json.load(f).get("history", {})
+        if not cfg.get("enabled", True):
+            return None
+        from history_manager import HistoryManager
+        return HistoryManager(
+            db_path=os.path.expanduser(cfg.get("db_path", "~/.voice_typer/history.db")),
+            retention_days=int(cfg.get("retention_days", 90)),
+        )
+    except Exception as exc:
+        logging.warning("History capture unavailable: %s", exc)
+        return None
+
+
 class VoiceTyperWhisper:
     """Manages mic capture, Silero VAD, faster-whisper transcription, and text insertion."""
 
@@ -521,6 +544,10 @@ class VoiceTyperWhisper:
         self._last_transcript_time = 0.0
         self._last_typed_text: Optional[str] = None
         self._typing_lock = threading.Lock()
+
+        self._history = _init_history()
+        if self._history is not None:
+            logging.info("History capture enabled (%s)", self._history.db_path)
 
         # Lazy-cached text inserter (R7: defer import-time side effects)
         self._text_inserter = None
@@ -666,6 +693,7 @@ class VoiceTyperWhisper:
         if not self._transcribe_lock.acquire(blocking=False):
             logging.debug("Transcription in progress, dropping utterance.")
             return
+        persist_text: Optional[str] = None
         try:
             # Silent-capture guard: a sustained press with no audio = muted/dead mic.
             # Notify instead of letting Whisper hallucinate "You" on the silence.
@@ -708,14 +736,22 @@ class VoiceTyperWhisper:
 
             typed = text + " "
             logging.info("Typing: %s", text)
-            self._type_text(typed)
-            # Track last typed output so clear-last / undo commands know what to remove
-            self._last_typed_text = typed
-            # After text is inserted, return overlay to idle
+            inserted = self._type_text(typed)
             if self._overlay is not None:
                 self._overlay.set_state(OverlayState.IDLE)
+            if not inserted:
+                return
+            # Track last typed output so clear-last / undo commands know what to remove
+            self._last_typed_text = typed
+            persist_text = text
         finally:
             self._transcribe_lock.release()
+        # Persist outside the lock: a slow disk write must not make the busy-lock
+        # guard above drop the next utterance.
+        if persist_text is not None and self._history is not None:
+            self._history.add(
+                persist_text, duration_ms=int(len(audio_bytes) / 2 / SAMPLE_RATE * 1000)
+            )
 
     def _warn_mic_silent(self):
         """Notify that the mic captured silence (likely muted/dead) instead of
@@ -775,6 +811,8 @@ class VoiceTyperWhisper:
             )
             logging.info("Voice command: cleared last utterance via Ctrl+Z")
             self._last_typed_text = None
+            if self._history is not None:
+                self._history.delete_last()
             self._play_cmd_ack()
         except Exception as exc:
             logging.error("clear_last failed: %s", exc)
@@ -822,16 +860,19 @@ class VoiceTyperWhisper:
                     daemon=True,
                 ).start()
 
-    def _type_text(self, text: str):
-        """R2: delegate to src/text_insertion.py unconditionally (all lengths)."""
+    def _type_text(self, text: str) -> bool:
+        """R2: delegate to src/text_insertion.py unconditionally (all lengths).
+
+        Returns True only when an insertion strategy completed without raising,
+        so callers can avoid recording text that never reached the screen."""
         if not text:
-            return
+            return False
         try:
             if self._text_inserter is None:
                 from src.text_insertion import text_inserter as _ti
                 self._text_inserter = _ti
             self._text_inserter.insert_text(text)
-            return
+            return True
         except Exception as exc:
             logging.warning("text_inserter failed (%s), falling back to xdotool.", exc)
         try:
@@ -839,8 +880,10 @@ class VoiceTyperWhisper:
                 ["xdotool", "type", "--clearmodifiers", "--", text],
                 check=True, timeout=10,
             )
+            return True
         except Exception as exc:
             logging.error("xdotool fallback failed: %s", exc)
+            return False
 
     def _handle_toggle_signal(self, signum, frame):
         if self._listening_flag.is_set():

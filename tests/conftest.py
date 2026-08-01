@@ -14,3 +14,11 @@ def mock_config_file(tmp_path):
     config_dir.mkdir(parents=True)
     config_file = config_dir / "config.ini"
     return config_file
+
+
+@pytest.fixture(autouse=True)
+def _no_real_history(monkeypatch):
+    """VoiceTyperWhisper.__init__ wires HistoryManager from ~/.voice_typer/config.json;
+    tests must never read or write the user's real history database."""
+    import voice_typer_whisper as vtw
+    monkeypatch.setattr(vtw, "_init_history", lambda *a, **k: None)

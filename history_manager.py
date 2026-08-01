@@ -1,6 +1,7 @@
 """Transcript history management with SQLite."""
 import sqlite3
 import os
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,7 +23,12 @@ class HistoryManager:
         
         self._init_db()
         self._cleanup_old()
-    
+        self._last_cleanup = time.monotonic()
+        try:
+            os.chmod(self.db_path, 0o600)
+        except OSError:
+            pass
+
     def _init_db(self) -> None:
         """Initialize database schema."""
         with sqlite3.connect(self.db_path) as conn:
@@ -45,8 +51,13 @@ class HistoryManager:
         """Add a transcript to history."""
         if not text or not text.strip():
             return
-            
+
         try:
+            # Long-lived daemon: retention must be enforced continuously, not
+            # only at startup.
+            if time.monotonic() - self._last_cleanup > 86400:
+                self._cleanup_old()
+                self._last_cleanup = time.monotonic()
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
                     "INSERT INTO transcripts (text, duration_ms, confidence, session_id) VALUES (?, ?, ?, ?)",
@@ -55,6 +66,20 @@ class HistoryManager:
                 conn.commit()
         except Exception as e:
             logging.error(f"Error saving to history: {e}")
+
+    def delete_last(self) -> None:
+        """Remove this session's most recent transcript (voice undo retracts history)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "DELETE FROM transcripts WHERE id = ("
+                    "SELECT id FROM transcripts WHERE session_id = ? "
+                    "ORDER BY id DESC LIMIT 1)",
+                    (self.session_id,),
+                )
+                conn.commit()
+        except Exception as e:
+            logging.error(f"Error deleting last transcript: {e}")
     
     def get_recent(self, n: int = 10) -> List[Dict]:
         """Get recent transcripts."""
