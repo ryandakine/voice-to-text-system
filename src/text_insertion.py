@@ -3,6 +3,7 @@ Text insertion module for universal text input across applications.
 """
 
 import subprocess
+import re
 import time
 import threading
 import shutil
@@ -12,6 +13,7 @@ import pyperclip
 
 from .utils.logger import logger
 from .utils.config_manager import config
+from .modifier_guard import wait_for_modifiers_released
 
 
 from .interfaces import OutputService
@@ -66,7 +68,13 @@ class TextInserter(OutputService):
         if not text or not text.strip():
             logger.warning("Attempted to insert empty text")
             return False
-        
+
+        # Typing while Alt/Ctrl is still down fires shortcuts (a held Alt turns
+        # every key into a menu accelerator). Abort every method instead.
+        if not wait_for_modifiers_released():
+            self._notify_modifier_stuck()
+            return False
+
         try:
             # Try primary method first
             if self._insert_with_method(text, self.primary_method, window_id=window_id):
@@ -83,14 +91,27 @@ class TextInserter(OutputService):
             logger.error(f"Text insertion failed: {e}")
             return False
     
+    def _notify_modifier_stuck(self) -> None:
+        """One desktop notification when dictation was dropped because a modifier stayed down."""
+        try:
+            subprocess.run(
+                ["notify-send", "Voice Typer",
+                 "A modifier key stayed held - dictation not typed"],
+                timeout=5, check=False,
+            )
+        except Exception as exc:
+            logger.warning(f"Could not notify about stuck modifier: {exc}")
+
     def _insert_with_method(self, text: str, method: str, window_id: Optional[str] = None) -> bool:
         """Insert text using a specific method."""
         try:
             if method == 'clipboard':
                 return self._insert_via_clipboard(text, window_id=window_id)
             elif method == 'keyboard':
+                self._prepare_input_target(window_id)
                 return self._insert_via_keyboard(text)
             elif method == 'xdotool':
+                self._prepare_input_target(window_id)
                 return self._insert_via_xdotool(text)
             else:
                 logger.error(f"Unknown insertion method: {method}")
@@ -103,14 +124,20 @@ class TextInserter(OutputService):
     def _get_active_window_class(self) -> Optional[str]:
         """Best-effort detection of the active window class (X11)."""
         try:
+            window_id = self._get_active_window_id()
+            if not window_id:
+                return None
             result = subprocess.run(
-                ['xdotool', 'getactivewindow', 'getwindowclassname'],
+                ['xprop', '-id', window_id, 'WM_CLASS'],
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=5,
             )
-            window_class = (result.stdout or '').strip()
-            return window_class.lower() if window_class else None
+            # getwindowclassname is not supported by the installed xdotool.
+            # WM_CLASS contains the instance name followed by the class name.
+            classes = re.findall(r'"([^"\n]+)"', result.stdout or '')
+            return classes[-1].lower() if classes else None
         except Exception:
             return None
 
@@ -122,10 +149,40 @@ class TextInserter(OutputService):
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=5,
             )
-            return result.stdout.strip() or None
+            # Some xdotool builds print diagnostic lines before the window ID.
+            # Never pass those lines back to windowfocus as part of an ID.
+            for line in reversed((result.stdout or '').splitlines()):
+                value = line.strip()
+                if re.fullmatch(r'(?:0x[0-9a-fA-F]+|[0-9]+)', value):
+                    return value
+            return None
         except Exception:
             return None
+
+    def _prepare_input_target(self, window_id: Optional[str] = None) -> None:
+        """Restore focus after Alt push-to-talk before sending text or paste."""
+        if not shutil.which('xdotool'):
+            return
+        if window_id:
+            subprocess.run(
+                ['xdotool', 'windowactivate', '--sync', window_id],
+                capture_output=True, check=True, timeout=5,
+            )
+            time.sleep(0.05)
+        # Alt-release can activate an application's menu without changing its
+        # top-level window. A successful key injection then never reaches the
+        # text field. Escape dismisses that menu; preserve terminal key handling.
+        # Never --clearmodifiers: it fakes a release of any held key (ending an Alt
+        # push-to-talk mid-hold) and re-presses it, which can leave Super/Alt stuck.
+        if self._get_active_window_class() not in self.TERMINAL_LIKE_WINDOW_CLASSES:
+            wait_for_modifiers_released()
+            subprocess.run(
+                ['xdotool', 'key', 'Escape'],
+                capture_output=True, check=True, timeout=5,
+            )
+            time.sleep(0.05)
 
     def _get_paste_hotkey(self) -> List[str]:
         """Choose the paste hotkey sequence based on the active application."""
@@ -137,8 +194,8 @@ class TextInserter(OutputService):
     def _paste_hotkey(self, hotkey: List[str], window_id: Optional[str] = None) -> None:
         """Paste using a hotkey.
 
-        Prefer xdotool when available because it's generally more reliable for X11 automation
-        and supports clearing stuck modifiers.
+        Prefer xdotool when available because it's generally more reliable for X11 automation.
+        Waits until no modifier key is held instead of clearing modifiers.
 
         When window_id is provided the target window is explicitly focused before pasting.
         This handles two common problems that occur during push-to-talk (Alt key) usage:
@@ -149,26 +206,14 @@ class TextInserter(OutputService):
              Terminals are excluded because Escape has special meaning there.
         """
         if shutil.which('xdotool'):
-            if window_id:
-                subprocess.run(
-                    ['xdotool', 'windowfocus', '--sync', window_id],
-                    capture_output=True,
-                )
-                time.sleep(0.05)
-
-            is_terminal = hotkey == ['ctrl', 'shift', 'v']
-            if not is_terminal:
-                subprocess.run(
-                    ['xdotool', 'key', '--clearmodifiers', 'Escape'],
-                    capture_output=True,
-                )
-                time.sleep(0.05)
-
+            self._prepare_input_target(window_id)
+            wait_for_modifiers_released()
             key_combo = '+'.join(hotkey)
-            subprocess.run(['xdotool', 'key', '--clearmodifiers', key_combo], check=True)
+            subprocess.run(['xdotool', 'key', key_combo], check=True)
             return
 
         # Fallback to pyautogui
+        wait_for_modifiers_released()
         pyautogui.hotkey(*hotkey)
 
     def _insert_via_clipboard(self, text: str, window_id: Optional[str] = None) -> bool:
@@ -246,6 +291,7 @@ class TextInserter(OutputService):
         """Insert text using keyboard simulation."""
         try:
             interval = max(0.0, float(self.keyboard_interval or 0.0))
+            wait_for_modifiers_released()
             pyautogui.write(text, interval=interval)
 
             logger.log_text_insertion("keyboard", True, f"length={len(text)}")
@@ -258,11 +304,12 @@ class TextInserter(OutputService):
     def _insert_via_xdotool(self, text: str) -> bool:
         """Insert text using xdotool."""
         try:
-            # Use xdotool to type text.
-            # --clearmodifiers helps avoid stuck modifiers (Alt/Ctrl) affecting output.
+            # Use xdotool to type text once no modifier is held (never --clearmodifiers,
+            # which re-presses held modifiers and can leave them stuck).
             # --delay 0 keeps it fast for long transcriptions.
+            wait_for_modifiers_released()
             subprocess.run(
-                ['xdotool', 'type', '--clearmodifiers', '--delay', '0', '--', text],
+                ['xdotool', 'type', '--delay', '0', '--', text],
                 check=True,
             )
 
