@@ -46,7 +46,8 @@ echo whisper > ~/.voice_typer/provider.txt
 
 ## Usage
 
-Listening is **on by default**. Speak — text types into the focused app.
+Continuous listening starts **paused**. Hold **Alt** to dictate, or click the
+tray icon to enable hands-free typing into the focused app.
 
 ### Pause / resume
 
@@ -60,7 +61,6 @@ Listening is **on by default**. Speak — text types into the focused app.
 ### Hotkeys
 
 - **Alt (hold)** — push-to-talk. Captures while held, transcribes on release. Works even when continuous listening is paused.
-- **F8** — toggle continuous listening. Some WMs grab F8 before the app sees it; if so, use the tray or voice command.
 - **Esc** — emergency stop.
 
 ### Voice commands
@@ -151,7 +151,7 @@ See [`scripts/README-remote-mic.md`](scripts/README-remote-mic.md) for architect
 
 **CUDA OOM or transcription lags.** Drop `model = base.en` (or `tiny.en`) in `~/.config/voice-to-text/config.ini`. Set `device = cpu` if you don't have a working CUDA install. With `auto_downgrade = true` the typer self-corrects when the real-time factor slips.
 
-**F8 toggle doesn't fire.** Some keyboards/WMs grab F8 before pynput sees it. Use the tray icon left-click, or the `computer stop/start listening` voice commands. Alt push-to-talk always works regardless.
+**Hands-free listening won't toggle.** There is no global hotkey for it (F8 collided with Cinnamon's Alt+F8 window-resize). Use the tray icon left-click, or the `computer stop/start listening` voice commands. Alt push-to-talk always works regardless.
 
 ## System requirements
 
@@ -166,7 +166,11 @@ See [`scripts/README-remote-mic.md`](scripts/README-remote-mic.md) for architect
 .venv/bin/python -m pytest tests/ -v
 ```
 
-47 tests covering the whisper typer (auto-downgrade, Silero reset, text-inserter delegation), partial-transcript buffering, overlay signals, voice-command integration, application integration, history, config loader, and text insertion.
+To check that real keyboard and clipboard input reaches a text field after an
+Alt menu takes focus, run `.venv/bin/python scripts/x11_insertion_check.py`.
+This uses a private Xvfb display and requires `xvfb-run`, `metacity`, and Tkinter.
+
+97 tests covering the whisper typer (auto-downgrade, Silero reset, hallucination filtering, text-inserter delegation), the stuck-key watcher, partial-transcript buffering, overlay signals, voice-command integration, application integration, history, config loader, and text insertion.
 
 ## License
 

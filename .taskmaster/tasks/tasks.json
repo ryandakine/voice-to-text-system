@@ -1,0 +1,39 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "1",
+        "title": "Stuck-key watcher: alert and auto-release fake modifier keys",
+        "description": "Background watcher in the X session polls per-device key state every 1s. A modifier held >=2s on the Virtual core XTEST keyboard (fake keys from xdotool/pynput) is released with xdotool keyup and a desktop notification says so; a Super/Ctrl/Shift held >=20s on a physical keyboard triggers a warning only. Log every event to ~/.local/state/stuck-keys.log. Autostart with the Cinnamon session. Root cause context: ledger note 01M677X3K38V8YW3TS2JQGPMHK.",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-10-30T20:44:17.030Z"
+      },
+      {
+        "id": "2",
+        "title": "Stop the voice typer leaving modifier keys stuck and cutting off push-to-talk",
+        "description": "Remove every xdotool --clearmodifiers (it releases held modifiers then re-presses them on the XTEST device, leaving Super/Alt stuck and ending an Alt push-to-talk mid-hold). Before any key injection, wait until no modifier is physically held. Log which source toggles dictation. Regression tests incl. a real-X test that a held Alt never sees a fake release. Approved by Ryan 2026-10-30; ledger 01M677X3K38V8YW3TS2JQGPMHK.",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-10-30T22:18:22.266Z"
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-10-30T22:18:22.266Z",
+      "taskCount": 2,
+      "completedCount": 2,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}

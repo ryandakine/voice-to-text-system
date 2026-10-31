@@ -1,137 +1,43 @@
 # Voice-to-Text System — AI Assistant Guide
 
-## Project Overview
+## What this is
 
-A system-wide voice-to-text application for Linux (Mint/Ubuntu). Provides global hotkey-triggered speech-to-text with universal text insertion into any application. Two transcription backends are supported and are interchangeable at startup:
+Local-first voice dictation for Linux. Hold **Alt** to talk, release to transcribe; text types into the focused app. **Default and required backend is local whisper (faster-whisper + Silero VAD) — no cloud STT.** Cloud (Deepgram Nova-2) and an alternate local backend (IBM Granite 4.0 1B) exist in the code as opt-in providers but are not to be enabled per user policy; treat them as legacy, not recommended.
 
-- Deepgram Nova-2: real-time streaming via WebSocket, cloud-based, lowest latency
-- OpenAI Whisper: local offline inference, no API cost, higher latency
+## Entry points (verify before trusting stale docs — this repo has two generations of code)
 
-Also integrates an OpenClaw AI mode (F9) that routes voice commands to GLM-5 via the OpenClaw gateway with Deepgram Aura TTS responses.
+Live path, in the last 5 commits:
+- `./toggle-voice-typer.sh` — start/stop with lockfile + pkill. Reads `~/.voice_typer/provider.txt` (`whisper` default, or `granite`/`deepgram`) and launches the matching script:
+  - `voice_typer_whisper.py` — blessed default. Alt PTT always works; continuous listening is off by default (F8 or tray toggles it, or say "computer start/stop listening").
+  - `voice_typer.py` (granite), `voice_typer_v1.py` (deepgram, legacy/cloud) — opt-in only.
+- `voice_typer_tray.py` — system tray, launched alongside.
+- `history_manager.py` → SQLite at `~/.voice_typer/history.db`. `config_manager.py` → JSON at `~/.voice_typer/config.json` (shortcuts, history, export, voice-command settings). `voice_commands.py` — wake-phrase ("computer …") command processor.
 
-IMPORTANT: Deepgram and Whisper modes cannot run simultaneously due to audio device conflicts.
+Legacy path (`src/main.py`, `application.py`, `interfaces.py`, `deepgram_processor.py`, `speech_processor.py`, `hotkey_handler.py`, `push_to_talk_handler.py`, `audio_manager.py`, `health_integration/`): only reachable via `launcher.py` / `start_push_to_talk_deepgram.py`, not the toggle script (git shows these last meaningfully changed Dec 2025–Apr 2026). Treat as superseded — do not extend it for new work without checking it's actually still wired to something.
 
-## Tech Stack
+Exception — these `src/` files ARE live (imported by `voice_typer_whisper.py`), don't delete as "dead src/": `text_insertion.py` (line ~872), plus optional imports `listening_overlay.py` (overlay UI) and `partial_buffer.py` (streaming partials — this is the file the 2026-04-16 commit actually touched). Note `input_strategy.py` is NOT on the whisper path — it's imported only by the legacy Deepgram path, so it belongs with the legacy list above, not here.
 
-| Component | Technology |
-|-----------|-----------|
-| Language | Python 3.8+ |
-| STT (cloud) | Deepgram Nova-2 (deepgram-sdk>=3.0.0) — WebSocket streaming |
-| STT (local) | OpenAI Whisper (openai-whisper) — local inference |
-| Audio capture | PyAudio + PortAudio |
-| Audio processing | numpy, soundfile, librosa |
-| Hotkeys | pynput, keyboard |
-| Text insertion | xdotool, pyautogui, pyperclip (multi-strategy with fallback) |
-| GUI | PyGObject (GTK3), system tray |
-| Health APIs | Samsung Health + Whoop (REST OAuth) |
-| Config | configparser (INI in ~/.config/voice-to-text/) |
-| Dashboard | Node.js Express (dashboard-server.js) |
+F9/OpenClaw-AI-mode routing to a GLM-5 gateway exists only in the legacy/opt-in scripts (`voice_typer_v1.py`, `voice_typer.py`, `shortcuts.py`, `control-voice-typer.sh`) — not in the default whisper path.
 
-## Repository Structure
+## Config (two real locations, both live)
 
-```
-src/
-  main.py                  Entry point + mode selection
-  application.py           Main app orchestrator
-  interfaces.py            TranscriptionService abstract interface (ABC)
-  deepgram_processor.py    Deepgram Nova-2 real-time streaming service
-  speech_processor.py      Whisper local transcription service
-  audio_manager.py         PyAudio recording abstraction
-  hotkey_handler.py        Global hotkey registration
-  push_to_talk_handler.py  Alt-hold push-to-talk logic
-  text_insertion.py        Multi-strategy text injector
-  input_strategy.py        Strategy pattern for text insertion
-  voice_typer.py           Deepgram live streaming voice typer
-  voice_assistant.py       Voice assistant mode
-  tts_speaker.py           TTS response playback (Deepgram Aura)
-  gui/                     GTK3 status window + system tray
-  health_integration/      Samsung Health + Whoop connectors + HealthMonitor
-  utils/                   Logging, audio utilities
-agentic_terminal/          Agentic terminal integration
-systemd/                   User systemd service units
-scripts/                   Install script, hotkey trigger scripts
-```
+- `~/.config/voice-to-text/config.ini` — whisper/audio params (model, device, vad_threshold, auto_downgrade). Template: `config.ini.example`.
+- `~/.voice_typer/config.json` — shortcuts, history retention, export, voice-command prefix. Written/read by `config_manager.py`; defaults created on first run.
 
-## Key Commands
+## Key commands
 
 ```bash
-# Deepgram Mode (Recommended)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-sudo apt install -y xdotool python3-pyaudio portaudio19-dev
-cp .env.example .env    # Add DEEPGRAM_API_KEY
-./toggle-voice-typer.sh
-# F8 to pause/resume, F9 for OpenClaw AI mode
-
-# Whisper Mode (Local/Offline)
-./install.sh
-python3 src/main.py --mode hotkey   # F5 to record
-python3 src/main.py --mode ptt      # Alt-hold push-to-talk
-python3 src/main.py --mode auto     # Auto silence detection
-
-# System service
-systemctl --user enable voice-to-text.service
-systemctl --user start voice-to-text.service
-
-# Dashboard
-node dashboard-server.js    # http://localhost:3456
+./install.sh              # system deps + venv + both config dirs
+./toggle-voice-typer.sh   # start/stop (provider from ~/.voice_typer/provider.txt)
+./run_voice_typer.sh      # direct launch, no toggle/lock
+.venv/bin/python -m pytest tests/ -v   # run `--collect-only -q` first for the current count — it drifts every commit
 ```
 
-## Architecture Patterns
+`systemd/voice-to-text.service`'s `ExecStart` points at `start_push_to_talk.py`, which does not exist in this repo — the unit is broken as committed; don't `systemctl enable` it without fixing the path first.
 
-### TranscriptionService Interface
-Both Deepgram and Whisper implement the TranscriptionService abstract interface in src/interfaces.py. They are interchangeable at startup — application.py selects the implementation based on --mode flag or config.
+## Constraints
 
-When adding a new STT backend, implement TranscriptionService and register it in application.py. Do not add mode-specific branching outside of application.py.
+- Only one provider process runs at a time (toggle script kills prior instances before starting).
+- `xdotool` required for text insertion; `src/text_insertion.py` falls back primary→secondary method (clipboard/keyboard/xdotool, configurable) — not a fixed 3-step chain.
+- Config paths are fixed (`~/.config/voice-to-text/`, `~/.voice_typer/`) — don't hardcode elsewhere or write config into the repo dir.
 
-### Multi-Strategy Text Insertion
-text_insertion.py tries three methods in order, falling back on failure:
-1. Clipboard paste (pyperclip + Ctrl+V) — fastest
-2. xdotool type — for apps that block clipboard
-3. Keyboard simulation (pyautogui) — last resort
-
-Never remove a strategy — each handles apps that break the previous one.
-
-### Config Location
-All user config lives in ~/.config/voice-to-text/ (INI format). Do not hardcode paths. Default config is created on first run.
-
-### Health Integration
-src/health_integration/ connects to Samsung Health and Whoop APIs. HealthMonitor provides real-time biometric data that voice assistant mode uses to adapt response tone. Optional — degrades gracefully if APIs are unavailable.
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| DEEPGRAM_API_KEY | Deepgram API key (required for Deepgram mode) |
-| OPENCLAW_GATEWAY_URL | OpenClaw gateway URL for F9 AI mode |
-| SAMSUNG_HEALTH_TOKEN | Samsung Health OAuth token (optional) |
-| WHOOP_CLIENT_ID | Whoop API client ID (optional) |
-| WHOOP_CLIENT_SECRET | Whoop API client secret (optional) |
-
-## Testing
-
-```bash
-pytest tests/
-python3 test_installation.py     # Verify all dependencies installed correctly
-python3 test_input.py            # Test text insertion strategies
-python3 test_pynput.py           # Test hotkey capture
-python3 test_health_integration.py  # Test health API connections
-```
-
-Run test_installation.py first on a new machine.
-
-## System Requirements
-
-- Linux (Ubuntu 20.04+ or Linux Mint 20+)
-- xdotool (text insertion)
-- portaudio19-dev + python3-pyaudio (audio capture)
-- GTK3 (GUI/tray icon)
-- Working audio input device
-
-## Important Constraints
-
-- Deepgram and Whisper cannot run simultaneously — both claim the audio device.
-- xdotool is required — without it the system falls back to clipboard-only mode.
-- F9 OpenClaw AI mode requires OPENCLAW_GATEWAY_URL — falls back to standard transcription without it.
-- Text insertion strategy order must not change — the fallback chain is ordered by reliability.
-- Config is in ~/.config/voice-to-text/ — never hardcode paths or write config to the repo directory.

@@ -34,6 +34,15 @@ if [ -f "$LOCK_FILE" ] || pgrep -f "python.*voice_typer(_v1|_whisper)?.py" > /de
 else
     # START - Launch one instance with lock
     cd "$SCRIPT_DIR"
+    # The HF hub re-validates the model over the network on every start and re-downloads it,
+    # which stalls on slow/flaky wifi even when the model is already fully cached. Load
+    # cache-only so startup is instant and offline-safe.
+    # NOTE: offline mode blocks new downloads. voice_typer_whisper.py loads models from
+    # download_root=~/.cache/whisper (NOT the default ~/.cache/huggingface/hub). To switch to a
+    # not-yet-cached model later, pre-download it INTO that dir first, then it loads offline:
+    #   .venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('<model>', device='cpu', download_root='$HOME/.cache/whisper')"
+    # (that download needs network, so run it with HF_HUB_OFFLINE unset.)
+    export HF_HUB_OFFLINE=1
     touch "$LOCK_FILE"
     nohup "$SCRIPT_DIR/.venv/bin/python" "$TYPER_SCRIPT" > "$SCRIPT_DIR/voice_typer.log" 2>&1 &
     nohup "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/voice_typer_tray.py" > /dev/null 2>&1 &

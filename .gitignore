@@ -46,3 +46,8 @@ dist/
 .pytest_cache/
 .claude/
 .env.bak*
+.gstack/
+*.bak*
+cache/
+.taskmaster/templates/
+.taskmaster/state.json
