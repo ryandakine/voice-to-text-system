@@ -2,7 +2,7 @@
 """Voice typer using local faster-whisper (CTranslate2) STT + Silero VAD.
 
 Provider: "whisper" in ~/.voice_typer/provider.txt
-Hotkeys: F8 toggle on/off, Alt push-to-talk
+Hotkeys: Alt push-to-talk (tray icon and voice commands toggle listening)
 Model runs locally on GPU or CPU via CTranslate2.
 """
 
@@ -23,6 +23,7 @@ from pynput import keyboard
 from faster_whisper import WhisperModel
 
 from voice_commands import VoiceCommandProcessor, VoiceCommand
+from src.modifier_guard import wait_for_modifiers_released
 
 # Optional overlay — lazy-imported so tests and CI without GTK still work.
 try:
@@ -73,6 +74,17 @@ FRAME_MS = SILERO_FRAME_SAMPLES * 1000 / SAMPLE_RATE  # 32.0 ms per Silero frame
 # both failure modes — it keys on the symptom (no audio), not the cause.
 SILENCE_RMS_THRESHOLD = 25       # int16 RMS below this = effectively silent (a muted mic reads ~0)
 SILENCE_MIN_DURATION_S = 1.0     # ignore short / accidental Alt taps
+
+# Phrases Whisper emits on silence. Dropped only when the segment also looks like
+# silence (no_speech_prob >= 0.5) and real speech was transcribed alongside it —
+# a lone "Okay." is a deliberate reply and must survive.
+HALLUCINATION_PHRASES = {
+    "thank you", "thanks", "thank you very much", "you", "bye",
+    "bye bye", "okay", "thanks for watching", "so",
+    "thank you for watching", "please subscribe", "i don't know",
+    "i'm sorry", "thank you so much", "thanks for watching!",
+}
+HALLUCINATION_NO_SPEECH_PROB = 0.5
 
 
 def is_silent_capture(
@@ -203,6 +215,15 @@ class WhisperTranscriber:
                 prompt = cfg.get("Whisper", "initial_prompt", fallback="").strip()
                 self._initial_prompt = prompt or None
 
+        # Temperature fallback: on a segment that decodes as garbled (high compression
+        # ratio or low average log-prob), faster-whisper retries at rising temperatures
+        # instead of emitting the bad text. A single configured temperature disables that
+        # fallback, so expand a 0.0 setting to the library's standard temperature ladder.
+        if self._temperature == 0.0:
+            self._temperatures = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+        else:
+            self._temperatures = [self._temperature]
+
         self._latency_samples: deque = deque(maxlen=self._downgrade_window)
         threading.Thread(target=self._load, daemon=True, name="whisper-loader").start()
 
@@ -278,13 +299,31 @@ class WhisperTranscriber:
                     audio_np,
                     language=lang,
                     beam_size=self._beam_size,
-                    vad_filter=False,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=250, speech_pad_ms=200),
                     condition_on_previous_text=False,
                     no_speech_threshold=0.6,
-                    temperature=self._temperature,
+                    temperature=self._temperatures,
+                    compression_ratio_threshold=2.4,
+                    log_prob_threshold=-1.0,
                     initial_prompt=self._initial_prompt,
                 )
-                text = " ".join(s.text for s in segments).strip()
+                # Drop Whisper's silence-hallucinations per segment (push-to-talk bypasses
+                # the recording-time VAD, so the quiet gap before speech becomes "Thank you.").
+                # A listed phrase said on purpose has a low no_speech_prob, and a lone one
+                # ("Okay.") is the whole utterance — keep both.
+                segments = list(segments)
+                kept = []
+                for segment in segments:
+                    words = segment.text.strip()
+                    normalized = words.lower().strip(" .,!?")
+                    looks_silent = getattr(segment, "no_speech_prob", 0.0) >= HALLUCINATION_NO_SPEECH_PROB
+                    if (normalized in HALLUCINATION_PHRASES and looks_silent
+                            and len(segments) > 1):
+                        logging.info("Dropped likely hallucination: %s", words)
+                        continue
+                    kept.append(words)
+                text = " ".join(kept).strip()
             self._record_latency(time.monotonic() - t0, audio_duration)
             return text if text else None
         except Exception as exc:
@@ -690,8 +729,11 @@ class VoiceTyperWhisper:
                 ).start()
 
     def _transcribe_and_type(self, audio_bytes: bytes, is_ptt: bool = False):
-        if not self._transcribe_lock.acquire(blocking=False):
-            logging.debug("Transcription in progress, dropping utterance.")
+        # A deliberate Alt push-to-talk must never be dropped: wait for the previous
+        # utterance to finish typing. Continuous dictation still drops an overlapping
+        # segment so a slow transcription cannot build a backlog.
+        if not self._transcribe_lock.acquire(blocking=is_ptt):
+            logging.warning("Transcription in progress, dropping dictation segment.")
             return
         persist_text: Optional[str] = None
         try:
@@ -805,8 +847,10 @@ class VoiceTyperWhisper:
         """C2: use app-level undo (Ctrl+Z), not counted backspaces.
         Works regardless of clipboard-paste vs keystroke insertion."""
         try:
+            # No --clearmodifiers: it re-presses held modifiers and can leave them stuck.
+            wait_for_modifiers_released()
             subprocess.run(
-                ["xdotool", "key", "--clearmodifiers", "ctrl+z"],
+                ["xdotool", "key", "ctrl+z"],
                 check=True, timeout=5,
             )
             logging.info("Voice command: cleared last utterance via Ctrl+Z")
@@ -846,6 +890,9 @@ class VoiceTyperWhisper:
             logging.info("Alt key pressed — PTT ACTIVE")
 
     def _on_key_release(self, key):
+        # F8 is not a hotkey: Alt+F8 is Cinnamon's window-resize, and grabbing F8
+        # flipped dictation on whenever Ryan resized a window. Listening toggles
+        # come from the tray icon and voice commands only.
         if key in self._alt_keys and self._alt_pressed:
             self._alt_pressed = False
             self._ptt_active = False
@@ -871,13 +918,20 @@ class VoiceTyperWhisper:
             if self._text_inserter is None:
                 from src.text_insertion import text_inserter as _ti
                 self._text_inserter = _ti
-            self._text_inserter.insert_text(text)
-            return True
+            if self._text_inserter.insert_text(text):
+                return True
+            logging.warning("text_inserter returned failure, falling back to xdotool.")
         except Exception as exc:
             logging.warning("text_inserter failed (%s), falling back to xdotool.", exc)
+        # A modifier still held means typing would spray Alt/Ctrl shortcuts.
+        # insert_text already waited out the full timeout, so this is an immediate
+        # recheck — and it does not type anyway.
+        if not wait_for_modifiers_released(timeout_s=0):
+            logging.warning("Modifier key still held; xdotool fallback skipped.")
+            return False
         try:
             subprocess.run(
-                ["xdotool", "type", "--clearmodifiers", "--", text],
+                ["xdotool", "type", "--", text],
                 check=True, timeout=10,
             )
             return True
@@ -886,13 +940,19 @@ class VoiceTyperWhisper:
             return False
 
     def _handle_toggle_signal(self, signum, frame):
+        # Record which switch fired so an unexpected flip can be traced.
+        source = f"{signal.Signals(signum).name} (tray icon or control script)" if signum is not None else "tray icon or voice command"
         if self._listening_flag.is_set():
             self._listening_flag.clear()
-            logging.info("Listening PAUSED")
+            logging.info("Listening PAUSED (via %s)", source)
         else:
             self._listening_flag.set()
-            logging.info("Listening RESUMED")
+            logging.info("Listening RESUMED (via %s)", source)
         self._update_status_file()
+        if self._overlay is not None:
+            self._overlay.set_state(
+                OverlayState.IDLE if self._listening_flag.is_set() else OverlayState.OFF
+            )
 
     def _handle_ptt_signal(self, signum, frame):
         self._ptt_active = not self._ptt_active
@@ -935,13 +995,15 @@ class VoiceTyperWhisper:
             return
 
         logging.info(
-            "Ready. F8 to toggle, Alt to push-to-talk. "
+            "Ready. Alt to push-to-talk. "
             "vad_silence=%d frames (%.0f ms), min_speech=%d frames, max_buffer=%d frames.",
             self._silence_frames_threshold, self._silence_frames_threshold * FRAME_MS,
             self._min_speech_frames, self._max_buffer_frames,
         )
         if self._overlay is not None:
-            self._overlay.set_state(OverlayState.IDLE)
+            self._overlay.set_state(
+                OverlayState.IDLE if self._listening_flag.is_set() else OverlayState.OFF
+            )
 
         if self._partial_buf is not None:
             self._partial_buf.start()

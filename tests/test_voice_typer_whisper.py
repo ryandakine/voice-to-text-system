@@ -1,6 +1,7 @@
 """Tests for voice_typer_whisper.py — the faster-whisper + Silero VAD path."""
 
 import sys
+import subprocess
 import threading
 import time
 from types import SimpleNamespace
@@ -23,13 +24,51 @@ sys.modules.setdefault("faster_whisper", _fw_stub)
 sys.modules.setdefault("silero_vad", MagicMock())
 
 
-def _make_mock_whisper_model(text: str = "hello world"):
+def _make_mock_whisper_model(text: str = "hello world", segments=None):
     """faster-whisper.transcribe returns (segments_generator, info). Mock matches that."""
-    segments = iter([SimpleNamespace(text=text)])
+    if segments is None:
+        segments = [SimpleNamespace(text=text)]
     info = SimpleNamespace()
     model = MagicMock()
-    model.transcribe.return_value = (segments, info)
+    model.transcribe.return_value = (iter(segments), info)
     return model
+
+
+def _pcm() -> bytes:
+    return (np.ones(8000, dtype=np.int16) * 1000).tobytes()
+
+
+def test_lone_okay_is_kept_even_though_it_is_a_known_hallucination(caplog):
+    """A one-word reply is the whole utterance; dropping it deletes a real answer."""
+    import logging
+    from voice_typer_whisper import WhisperTranscriber
+
+    model = _make_mock_whisper_model(segments=[
+        SimpleNamespace(text="Okay.", no_speech_prob=0.95),
+    ])
+    with patch("voice_typer_whisper.WhisperModel", return_value=model):
+        t = WhisperTranscriber(model_name="tiny.en", device="cpu")
+        assert t.wait_until_ready(timeout=5)
+    with caplog.at_level(logging.INFO):
+        assert t.transcribe(_pcm()) == "Okay."
+    assert "Dropped likely hallucination" not in caplog.text
+
+
+def test_silent_thank_you_beside_real_speech_is_dropped_and_logged(caplog):
+    """The quiet gap before speech decodes as "Thank you."; the real words stay."""
+    import logging
+    from voice_typer_whisper import WhisperTranscriber
+
+    model = _make_mock_whisper_model(segments=[
+        SimpleNamespace(text="Thank you.", no_speech_prob=0.9),
+        SimpleNamespace(text="open the file", no_speech_prob=0.05),
+    ])
+    with patch("voice_typer_whisper.WhisperModel", return_value=model):
+        t = WhisperTranscriber(model_name="tiny.en", device="cpu")
+        assert t.wait_until_ready(timeout=5)
+    with caplog.at_level(logging.INFO):
+        assert t.transcribe(_pcm()) == "open the file"
+    assert "Dropped likely hallucination: Thank you." in caplog.text
 
 
 # ---------- Change 1: frame-splitter (Silero 512 vs PyAudio 1024) ----------
@@ -143,3 +182,126 @@ def test_type_text_delegates_to_text_inserter():
 
     assert fake_inserter.insert_text.call_count == 2
     fake_inserter.insert_text.assert_any_call("short")
+
+
+def test_f8_release_does_not_change_listening():
+    """Alt+F8 is Cinnamon's window-resize; F8 must not also flip dictation."""
+    import voice_typer_whisper as vtw
+
+    vt = vtw.VoiceTyperWhisper.__new__(vtw.VoiceTyperWhisper)
+    vt._listening_flag = threading.Event()
+    vt._overlay = MagicMock()
+    vt._update_status_file = MagicMock()
+    vt._alt_keys = set()
+
+    vt._on_key_release(vtw.keyboard.Key.f8)
+    assert not vt._listening_flag.is_set()
+    vt._overlay.set_state.assert_not_called()
+    vt._update_status_file.assert_not_called()
+
+    vt._listening_flag.set()
+    vt._on_key_release(vtw.keyboard.Key.f8)
+    assert vt._listening_flag.is_set()
+
+
+@pytest.mark.parametrize("fallback_succeeds", [True, False])
+def test_failed_text_insertion_uses_fallback_and_reports_result(fallback_succeeds):
+    import voice_typer_whisper as vtw
+
+    vt = vtw.VoiceTyperWhisper.__new__(vtw.VoiceTyperWhisper)
+    vt._text_inserter = MagicMock()
+    vt._text_inserter.insert_text.return_value = False
+    error = None if fallback_succeeds else subprocess.CalledProcessError(1, "xdotool")
+
+    with patch.object(vtw.subprocess, "run", side_effect=error) as run, \
+         patch.object(vtw, "wait_for_modifiers_released", return_value=True):
+        assert vt._type_text("dictation test") is fallback_succeeds
+
+    run.assert_called_once_with(
+        ["xdotool", "type", "--", "dictation test"],
+        check=True, timeout=10,
+    )
+
+
+def test_xdotool_fallback_does_not_type_while_a_modifier_is_still_held():
+    """Typing with Alt or Ctrl still down sprays shortcuts instead of text."""
+    import voice_typer_whisper as vtw
+
+    vt = vtw.VoiceTyperWhisper.__new__(vtw.VoiceTyperWhisper)
+    vt._text_inserter = MagicMock()
+    vt._text_inserter.insert_text.return_value = False
+
+    with patch.object(vtw.subprocess, "run") as run, \
+         patch.object(vtw, "wait_for_modifiers_released", return_value=False):
+        assert vt._type_text("dictation test") is False
+
+    run.assert_not_called()
+
+
+def test_undo_command_never_releases_and_represses_held_keys():
+    """'Clear that' sends Ctrl+Z only after modifiers are free, without
+    --clearmodifiers (which can leave Super/Alt stuck and cut off push-to-talk)."""
+    import voice_typer_whisper as vtw
+
+    vt = vtw.VoiceTyperWhisper.__new__(vtw.VoiceTyperWhisper)
+    vt._last_typed_text = "hello "
+    vt._history = None
+    vt._overlay = None
+    vt._play_cmd_ack = MagicMock()
+    order = []
+    with patch.object(vtw, "wait_for_modifiers_released",
+                      side_effect=lambda *a, **k: order.append("wait") or True), \
+         patch.object(vtw.subprocess, "run", side_effect=lambda argv, **k: order.append(argv)):
+        vt._handle_clear_last()
+
+    assert order == ["wait", ["xdotool", "key", "ctrl+z"]]
+
+
+def _transcribe_stub():
+    import voice_typer_whisper as vtw
+
+    vt = vtw.VoiceTyperWhisper.__new__(vtw.VoiceTyperWhisper)
+    vt._transcribe_lock = threading.Lock()
+    vt._warn_mic_silent = MagicMock()
+    return vtw, vt
+
+
+def test_push_to_talk_waits_for_the_previous_utterance_instead_of_dropping_it():
+    vtw, vt = _transcribe_stub()
+    vt._transcribe_lock.acquire()  # the previous utterance is still being typed
+    with patch.object(vtw, "is_silent_capture", return_value=True):
+        worker = threading.Thread(target=vt._transcribe_and_type, args=(b"\0" * 64,),
+                                  kwargs={"is_ptt": True})
+        worker.start()
+        time.sleep(0.3)
+        assert worker.is_alive(), "push-to-talk utterance was dropped instead of queued"
+        vt._transcribe_lock.release()
+        worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    vt._warn_mic_silent.assert_called_once()  # it went on to process the audio
+
+
+def test_continuous_dictation_still_drops_an_overlapping_segment():
+    vtw, vt = _transcribe_stub()
+    vt._transcribe_lock.acquire()
+    with patch.object(vtw, "is_silent_capture", return_value=True):
+        vt._transcribe_and_type(b"\0" * 64, is_ptt=False)  # returns at once
+    vt._warn_mic_silent.assert_not_called()
+    vt._transcribe_lock.release()
+
+
+def test_toggle_records_which_switch_fired(caplog):
+    import signal as _signal
+    import voice_typer_whisper as vtw
+
+    vt = vtw.VoiceTyperWhisper.__new__(vtw.VoiceTyperWhisper)
+    vt._listening_flag = threading.Event()
+    vt._overlay = None
+    vt._update_status_file = MagicMock()
+    with caplog.at_level("INFO"):
+        vt._handle_toggle_signal(None, None)
+        vt._handle_toggle_signal(_signal.SIGUSR1, None)
+
+    assert "Listening RESUMED (via tray icon or voice command)" in caplog.text
+    assert "Listening PAUSED (via SIGUSR1 (tray icon or control script))" in caplog.text
